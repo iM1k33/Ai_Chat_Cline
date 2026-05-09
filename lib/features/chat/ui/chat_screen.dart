@@ -14,6 +14,8 @@ class ChatScreen extends StatefulWidget {
     required this.controller,
     required this.exportService,
     required this.shareService,
+    required this.providerName,
+    this.selectedModelId,
     this.onOpenSettings,
     this.onOpenStatistics,
   });
@@ -21,6 +23,8 @@ class ChatScreen extends StatefulWidget {
   final ChatController controller;
   final ExportService exportService;
   final ShareService shareService;
+  final String providerName;
+  final String? selectedModelId;
 
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenStatistics;
@@ -385,6 +389,10 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: widget.controller,
       builder: (context, _) {
         final bool isWide = MediaQuery.of(context).size.width >= 800;
+        final String modelStatusText =
+            (widget.selectedModelId == null || widget.selectedModelId!.isEmpty)
+            ? 'No model selected'
+            : widget.selectedModelId!;
 
         return Scaffold(
           appBar: AppBar(
@@ -438,6 +446,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             _confirmAndDeleteCurrentConversation,
                         onDeleteAllConversations:
                             _confirmAndDeleteAllConversations,
+                      ),
+                      _ProviderModelStatusBar(
+                        providerName: widget.providerName,
+                        modelStatusText: modelStatusText,
                       ),
                       if (widget.controller.error != null)
                         Padding(
@@ -512,6 +524,30 @@ class _ActionBar extends StatelessWidget {
             label: const Text('Delete all'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ProviderModelStatusBar extends StatelessWidget {
+  const _ProviderModelStatusBar({
+    required this.providerName,
+    required this.modelStatusText,
+  });
+
+  final String providerName;
+  final String modelStatusText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          'Provider: $providerName  •  Model: $modelStatusText',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       ),
     );
   }

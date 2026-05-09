@@ -32,6 +32,32 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     return value.toStringAsFixed(1);
   }
 
+  Future<bool> _showClearStatisticsConfirmation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Clear statistics?'),
+          content: const Text(
+            'This will delete all saved usage and cost statistics. Chat conversations and messages will not be deleted. This action cannot be undone.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Clear'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -60,6 +86,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 onPressed: controller.isLoading
                     ? null
                     : () async {
+                        final bool confirmed =
+                            await _showClearStatisticsConfirmation();
+                        if (!confirmed) {
+                          return;
+                        }
+
                         await controller.deleteAllStatistics();
                         if (context.mounted && controller.error == null) {
                           ScaffoldMessenger.of(context).showSnackBar(

@@ -9,6 +9,7 @@ import 'package:aichatcline/features/chat/ui/chat_screen.dart';
 import 'package:aichatcline/features/export/services/export_service.dart';
 import 'package:aichatcline/features/export/services/share_service.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
+import 'package:aichatcline/features/settings/state/app_settings.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/settings/ui/initial_setup_screen.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
@@ -95,19 +96,50 @@ class _AIChatAppState extends State<AIChatApp> {
     );
   }
 
+  ThemeMode _resolveThemeMode(ThemeModeOption value) {
+    return switch (value) {
+      ThemeModeOption.system => ThemeMode.system,
+      ThemeModeOption.light => ThemeMode.light,
+      ThemeModeOption.dark => ThemeMode.dark,
+    };
+  }
+
+  String _providerStatusName() {
+    final String? selectedProviderId = _settingsController.settings.selectedProviderId;
+    return switch (selectedProviderId) {
+      'openrouter' => 'OpenRouter',
+      'vsegpt' => 'VSEGPT',
+      _ => 'Unknown provider',
+    };
+  }
+
+  String? _selectedModelIdOrNull() {
+    final String? selectedModelId = _settingsController.settings.selectedModelId
+        ?.trim();
+    if (selectedModelId == null || selectedModelId.isEmpty) {
+      return null;
+    }
+
+    return selectedModelId;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AI Chat',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
-      home: Builder(
-        builder: (context) {
-          return AnimatedBuilder(
-            animation: _settingsController,
-            builder: (BuildContext context, _) {
+    return AnimatedBuilder(
+      animation: _settingsController,
+      builder: (BuildContext context, _) {
+        final ThemeMode themeMode = _resolveThemeMode(
+          _settingsController.settings.themeMode,
+        );
+
+        return MaterialApp(
+          title: 'AI Chat',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: themeMode,
+          home: Builder(
+            builder: (context) {
               if (_settingsController.isLoading) {
                 return const Scaffold(
                   body: Center(child: CircularProgressIndicator()),
@@ -122,13 +154,15 @@ class _AIChatAppState extends State<AIChatApp> {
                 controller: _chatController,
                 exportService: _exportService,
                 shareService: _shareService,
+                providerName: _providerStatusName(),
+                selectedModelId: _selectedModelIdOrNull(),
                 onOpenSettings: () => _openSettings(context),
                 onOpenStatistics: () => _openStatistics(context),
               );
             },
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }
