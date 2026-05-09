@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 class ChatScreen extends StatelessWidget {
-  const ChatScreen({super.key});
+  const ChatScreen({super.key, this.onOpenSettings, this.onOpenStatistics});
+
+  final VoidCallback? onOpenSettings;
+  final VoidCallback? onOpenStatistics;
 
   @override
   Widget build(BuildContext context) {
@@ -12,12 +15,12 @@ class ChatScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Statistics',
             icon: const Icon(Icons.analytics_outlined),
-            onPressed: () {},
+            onPressed: onOpenStatistics,
           ),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () {},
+            onPressed: onOpenSettings,
           ),
         ],
       ),
@@ -51,10 +54,7 @@ class ChatScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: () {},
-                    child: const Text('Send'),
-                  ),
+                  FilledButton(onPressed: () {}, child: const Text('Send')),
                 ],
               ),
             ),
