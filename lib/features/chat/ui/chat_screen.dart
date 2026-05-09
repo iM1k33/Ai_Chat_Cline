@@ -1,6 +1,7 @@
 import 'package:aichatcline/features/chat/models/chat_message.dart';
 import 'package:aichatcline/features/chat/models/conversation.dart';
 import 'package:aichatcline/features/chat/state/chat_controller.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 
@@ -23,6 +24,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   late final TextEditingController _messageController;
+  final DateFormat _conversationDateFormat = DateFormat('yyyy-MM-dd HH:mm');
 
   @override
   void initState() {
@@ -48,6 +50,184 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<bool> _showDeleteCurrentConversationConfirmation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete conversation?'),
+          content: const Text(
+            'This will delete the current conversation and all its messages. This action cannot be undone.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
+  }
+
+  Future<bool> _showDeleteAllConversationsConfirmation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete all conversations?'),
+          content: const Text(
+            'This will delete all conversations and messages. This action cannot be undone.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete all'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmed ?? false;
+  }
+
+  Future<bool> _showDeleteConversationConfirmation() async {
+    return _showDeleteCurrentConversationConfirmation();
+  }
+
+  Future<void> _confirmAndDeleteCurrentConversation() async {
+    final Conversation? current = widget.controller.currentConversation;
+    if (current == null) {
+      return;
+    }
+
+    final bool confirmed = await _showDeleteCurrentConversationConfirmation();
+    if (!confirmed) {
+      return;
+    }
+
+    await widget.controller.deleteConversation(current.id);
+  }
+
+  Future<void> _confirmAndDeleteAllConversations() async {
+    final bool confirmed = await _showDeleteAllConversationsConfirmation();
+    if (!confirmed) {
+      return;
+    }
+
+    await widget.controller.deleteAllConversations();
+  }
+
+  Future<void> _confirmAndDeleteConversationById(String conversationId) async {
+    final bool confirmed = await _showDeleteConversationConfirmation();
+    if (!confirmed) {
+      return;
+    }
+
+    await widget.controller.deleteConversation(conversationId);
+  }
+
+  Future<void> _openConversationSwitcher() async {
+    if (!mounted) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext bottomSheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ListTile(
+                  title: const Text('Conversations'),
+                  trailing: IconButton(
+                    tooltip: 'New chat',
+                    icon: const Icon(Icons.add_comment_outlined),
+                    onPressed: () async {
+                      Navigator.of(bottomSheetContext).pop();
+                      await widget.controller.createNewConversation();
+                    },
+                  ),
+                ),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: widget.controller.conversations.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final Conversation conversation =
+                          widget.controller.conversations[index];
+                      final bool isSelected =
+                          widget.controller.currentConversation?.id ==
+                          conversation.id;
+
+                      return ListTile(
+                        selected: isSelected,
+                        selectedTileColor: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer.withValues(alpha: 0.4),
+                        leading: Icon(
+                          isSelected
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                        ),
+                        title: Text(
+                          conversation.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          'Updated ${_conversationDateFormat.format(conversation.updatedAt)}',
+                        ),
+                        onTap: () async {
+                          await widget.controller.selectConversation(
+                            conversation.id,
+                          );
+                          if (bottomSheetContext.mounted) {
+                            Navigator.of(bottomSheetContext).pop();
+                          }
+                        },
+                        trailing: IconButton(
+                          tooltip: 'Delete conversation',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () async {
+                            final bool confirmed =
+                                await _showDeleteConversationConfirmation();
+                            if (!confirmed) {
+                              return;
+                            }
+
+                            await widget.controller.deleteConversation(
+                              conversation.id,
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -61,6 +241,12 @@ class _ChatScreenState extends State<ChatScreen> {
               widget.controller.currentConversation?.title ?? 'AI Chat',
             ),
             actions: [
+              if (!isWide)
+                IconButton(
+                  tooltip: 'Conversations',
+                  icon: const Icon(Icons.menu),
+                  onPressed: _openConversationSwitcher,
+                ),
               IconButton(
                 tooltip: 'Statistics',
                 icon: const Icon(Icons.analytics_outlined),
@@ -79,7 +265,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (isWide)
                   SizedBox(
                     width: 280,
-                    child: _ConversationSidebar(controller: widget.controller),
+                    child: _ConversationSidebar(
+                      controller: widget.controller,
+                      onDeleteConversation: _confirmAndDeleteConversationById,
+                    ),
                   ),
                 Expanded(
                   child: Column(
@@ -87,6 +276,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       _ActionBar(
                         controller: widget.controller,
                         showCompactNewChat: !isWide,
+                        onDeleteCurrentConversation:
+                            _confirmAndDeleteCurrentConversation,
+                        onDeleteAllConversations:
+                            _confirmAndDeleteAllConversations,
                       ),
                       if (widget.controller.error != null)
                         Padding(
@@ -125,10 +318,14 @@ class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.controller,
     required this.showCompactNewChat,
+    required this.onDeleteCurrentConversation,
+    required this.onDeleteAllConversations,
   });
 
   final ChatController controller;
   final bool showCompactNewChat;
+  final Future<void> Function() onDeleteCurrentConversation;
+  final Future<void> Function() onDeleteAllConversations;
 
   @override
   Widget build(BuildContext context) {
@@ -147,14 +344,12 @@ class _ActionBar extends StatelessWidget {
           FilledButton.tonalIcon(
             onPressed: controller.currentConversation == null
                 ? null
-                : () => controller.deleteConversation(
-                    controller.currentConversation!.id,
-                  ),
+                : onDeleteCurrentConversation,
             icon: const Icon(Icons.delete_outline),
             label: const Text('Delete current'),
           ),
           OutlinedButton.icon(
-            onPressed: controller.deleteAllConversations,
+            onPressed: onDeleteAllConversations,
             icon: const Icon(Icons.delete_sweep_outlined),
             label: const Text('Delete all'),
           ),
@@ -165,9 +360,13 @@ class _ActionBar extends StatelessWidget {
 }
 
 class _ConversationSidebar extends StatelessWidget {
-  const _ConversationSidebar({required this.controller});
+  const _ConversationSidebar({
+    required this.controller,
+    required this.onDeleteConversation,
+  });
 
   final ChatController controller;
+  final Future<void> Function(String conversationId) onDeleteConversation;
 
   @override
   Widget build(BuildContext context) {
@@ -214,8 +413,7 @@ class _ConversationSidebar extends StatelessWidget {
                   trailing: IconButton(
                     tooltip: 'Delete conversation',
                     icon: const Icon(Icons.delete_outline),
-                    onPressed: () =>
-                        controller.deleteConversation(conversation.id),
+                    onPressed: () => onDeleteConversation(conversation.id),
                   ),
                 );
               },
