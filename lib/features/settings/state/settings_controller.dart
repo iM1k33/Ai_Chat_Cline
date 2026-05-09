@@ -100,6 +100,18 @@ class SettingsController extends ChangeNotifier {
     );
   }
 
+  Future<void> updateSelectedModelId(String? value) {
+    final String? normalized = value?.trim();
+    final String? selectedModelId = (normalized == null || normalized.isEmpty)
+        ? null
+        : normalized;
+
+    return _saveSettings(
+      settings.copyWith(selectedModelId: selectedModelId),
+      errorMessage: 'Failed to update selected model',
+    );
+  }
+
   Future<void> resetSettings() async {
     error = null;
     try {

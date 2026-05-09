@@ -14,6 +14,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _apiKeyController;
+  late final TextEditingController _modelIdController;
   late final TextEditingController _systemPromptController;
   late final TextEditingController _temperatureController;
   late final TextEditingController _maxTokensController;
@@ -29,6 +30,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final SettingsController controller = widget.controller;
 
     _apiKeyController = TextEditingController(text: controller.apiKey);
+    _modelIdController = TextEditingController(
+      text: controller.settings.selectedModelId ?? '',
+    );
     _systemPromptController = TextEditingController(
       text: controller.settings.systemPrompt,
     );
@@ -57,6 +61,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     widget.controller.removeListener(_syncControllersFromState);
     _apiKeyController.dispose();
+    _modelIdController.dispose();
     _systemPromptController.dispose();
     _temperatureController.dispose();
     _maxTokensController.dispose();
@@ -76,6 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final ModelParameters params = settings.modelParameters;
 
     _setTextIfDifferent(_apiKeyController, controller.apiKey);
+    _setTextIfDifferent(_modelIdController, settings.selectedModelId ?? '');
     _setTextIfDifferent(_systemPromptController, settings.systemPrompt);
     _setTextIfDifferent(_temperatureController, params.temperature.toString());
     _setTextIfDifferent(
@@ -178,6 +184,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 8),
             Text(
               'Detected provider: ${controller.detectedProvider?.name ?? 'Not detected'}',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _modelIdController,
+              decoration: const InputDecoration(
+                labelText: 'Model ID',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) async {
+                await controller.updateSelectedModelId(value);
+              },
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonal(
+                onPressed: () async {
+                  await controller.updateSelectedModelId(
+                    _modelIdController.text,
+                  );
+                },
+                child: const Text('Save model ID'),
+              ),
             ),
             const SizedBox(height: 16),
             TextField(

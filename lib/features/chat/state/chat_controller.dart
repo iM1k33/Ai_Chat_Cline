@@ -1,20 +1,39 @@
+import 'package:aichatcline/core/errors/app_exception.dart';
 import 'package:aichatcline/data/repositories/chat_repository.dart';
+import 'package:aichatcline/data/repositories/stats_repository.dart';
 import 'package:aichatcline/features/chat/models/chat_message.dart';
 import 'package:aichatcline/features/chat/models/conversation.dart';
+import 'package:aichatcline/features/providers/models/ai_provider.dart';
+import 'package:aichatcline/features/providers/models/chat_completion_request.dart';
+import 'package:aichatcline/features/providers/models/chat_completion_response.dart';
+import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
+import 'package:aichatcline/features/settings/state/settings_controller.dart';
+import 'package:aichatcline/features/statistics/models/usage_record.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 class ChatController extends ChangeNotifier {
-  ChatController({required ChatRepository chatRepository})
-    : _chatRepository = chatRepository;
+  ChatController({
+    required ChatRepository chatRepository,
+    required SettingsController settingsController,
+    required OpenAICompatibleClient aiClient,
+    required StatsRepository statsRepository,
+  }) : _chatRepository = chatRepository,
+       _settingsController = settingsController,
+       _aiClient = aiClient,
+       _statsRepository = statsRepository;
 
   final ChatRepository _chatRepository;
+  final SettingsController _settingsController;
+  final OpenAICompatibleClient _aiClient;
+  final StatsRepository _statsRepository;
   final Uuid _uuid = const Uuid();
 
   List<Conversation> conversations = <Conversation>[];
   Conversation? currentConversation;
   List<ChatMessage> messages = <ChatMessage>[];
   bool isLoading = false;
+  bool isSending = false;
   String? error;
 
   Future<void> load() async {
@@ -83,7 +102,7 @@ class ChatController extends ChangeNotifier {
 
   Future<void> sendLocalMessage(String content) async {
     final String trimmed = content.trim();
-    if (trimmed.isEmpty) {
+    if (trimmed.isEmpty || isSending) {
       return;
     }
 
@@ -92,7 +111,7 @@ class ChatController extends ChangeNotifier {
         await createNewConversation();
       }
 
-      final Conversation baseConversation = currentConversation!;
+      Conversation baseConversation = currentConversation!;
       final DateTime now = DateTime.now();
 
       final ChatMessage userMessage = ChatMessage(
@@ -102,34 +121,152 @@ class ChatController extends ChangeNotifier {
         content: trimmed,
         createdAt: now,
       );
-
       await _chatRepository.insertMessage(userMessage);
-
-      final ChatMessage assistantMessage = ChatMessage(
-        id: _uuid.v4(),
-        conversationId: baseConversation.id,
-        role: ChatMessageRole.assistant,
-        content:
-            'This is a local placeholder response. API integration is not implemented yet.',
-        createdAt: DateTime.now(),
-      );
-
-      await _chatRepository.insertMessage(assistantMessage);
 
       final String updatedTitle = baseConversation.title == 'New chat'
           ? _titleFromUserMessage(trimmed)
           : baseConversation.title;
 
-      final Conversation updatedConversation = baseConversation.copyWith(
+      baseConversation = baseConversation.copyWith(
         title: updatedTitle,
         updatedAt: DateTime.now(),
       );
 
-      await _chatRepository.upsertConversation(updatedConversation);
+      await _chatRepository.upsertConversation(baseConversation);
+      currentConversation = baseConversation;
       await _reloadConversations();
-      await selectConversation(updatedConversation.id);
+
+      messages = await _chatRepository.getMessages(baseConversation.id);
+      notifyListeners();
+
+      final String apiKey = _settingsController.apiKey.trim();
+      final String? selectedModelId = _settingsController
+          .settings
+          .selectedModelId
+          ?.trim();
+      final AIProvider? provider = _resolveProvider();
+
+      if (provider == null) {
+        await _insertAssistantError(
+          baseConversation,
+          'Error: Provider is not configured. Select OpenRouter or VSEGPT in settings.',
+        );
+        return;
+      }
+
+      if (apiKey.isEmpty) {
+        await _insertAssistantError(
+          baseConversation,
+          'Error: API key is missing. Set it in settings.',
+          provider: provider,
+          modelId: selectedModelId,
+        );
+        return;
+      }
+
+      if (selectedModelId == null || selectedModelId.isEmpty) {
+        await _insertAssistantError(
+          baseConversation,
+          'Error: Model ID is missing. Set it in settings.',
+          provider: provider,
+          modelId: selectedModelId,
+        );
+        return;
+      }
+
+      final List<ChatCompletionMessage> requestMessages = _buildRequestMessages(
+        messages,
+      );
+
+      final ChatCompletionRequest request = ChatCompletionRequest(
+        model: selectedModelId,
+        messages: requestMessages,
+        temperature: _settingsController.settings.modelParameters.temperature,
+        maxTokens: _settingsController.settings.modelParameters.maxTokens,
+        topP: _settingsController.settings.modelParameters.topP,
+        frequencyPenalty:
+            _settingsController.settings.modelParameters.frequencyPenalty,
+        presencePenalty:
+            _settingsController.settings.modelParameters.presencePenalty,
+        stream: false,
+      );
+
+      isSending = true;
+      error = null;
+      notifyListeners();
+
+      final Stopwatch stopwatch = Stopwatch()..start();
+
+      try {
+        final ChatCompletionResponse response = await _aiClient
+            .createChatCompletion(
+              provider: provider,
+              apiKey: apiKey,
+              request: request,
+            );
+        stopwatch.stop();
+
+        final ChatMessage assistantMessage = ChatMessage(
+          id: _uuid.v4(),
+          conversationId: baseConversation.id,
+          role: ChatMessageRole.assistant,
+          content: response.content,
+          createdAt: DateTime.now(),
+          modelId: response.model ?? selectedModelId,
+          providerId: response.providerId ?? provider.id,
+          promptTokens: response.promptTokens,
+          completionTokens: response.completionTokens,
+          totalTokens: response.totalTokens,
+          estimatedCost: 0,
+          error: null,
+        );
+
+        await _chatRepository.insertMessage(assistantMessage);
+
+        await _statsRepository.insertUsageRecord(
+          UsageRecord(
+            id: _uuid.v4(),
+            conversationId: baseConversation.id,
+            messageId: assistantMessage.id,
+            providerId: response.providerId ?? provider.id,
+            modelId: response.model ?? selectedModelId,
+            createdAt: DateTime.now(),
+            promptTokens: response.promptTokens ?? 0,
+            completionTokens: response.completionTokens ?? 0,
+            totalTokens: response.totalTokens ?? 0,
+            estimatedCost: 0,
+            currencyCode: provider.currencyCode,
+            responseTimeMs: stopwatch.elapsedMilliseconds,
+            error: null,
+          ),
+        );
+
+        await _chatRepository.upsertConversation(
+          baseConversation.copyWith(updatedAt: DateTime.now()),
+        );
+      } catch (e) {
+        stopwatch.stop();
+
+        final String safeError = e is AppException
+            ? e.message
+            : 'Failed to get response from provider';
+
+        await _insertAssistantError(
+          baseConversation,
+          'Error: $safeError',
+          provider: provider,
+          modelId: selectedModelId,
+          responseTimeMs: stopwatch.elapsedMilliseconds,
+        );
+      } finally {
+        isSending = false;
+      }
+
+      await _reloadConversations();
+      await selectConversation(baseConversation.id);
     } catch (_) {
-      error = 'Failed to send local message';
+      error = 'Failed to send message';
+      isSending = false;
       notifyListeners();
     }
   }
@@ -165,6 +302,105 @@ class ChatController extends ChangeNotifier {
       error = 'Failed to delete all chats';
       notifyListeners();
     }
+  }
+
+  Future<void> _insertAssistantError(
+    Conversation conversation,
+    String text, {
+    AIProvider? provider,
+    String? modelId,
+    int? responseTimeMs,
+  }) async {
+    final ChatMessage assistantMessage = ChatMessage(
+      id: _uuid.v4(),
+      conversationId: conversation.id,
+      role: ChatMessageRole.assistant,
+      content: text,
+      createdAt: DateTime.now(),
+      modelId: modelId,
+      providerId: provider?.id,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      estimatedCost: 0,
+      error: text,
+    );
+
+    await _chatRepository.insertMessage(assistantMessage);
+
+    if (provider != null && modelId != null && modelId.trim().isNotEmpty) {
+      await _statsRepository.insertUsageRecord(
+        UsageRecord(
+          id: _uuid.v4(),
+          conversationId: conversation.id,
+          messageId: assistantMessage.id,
+          providerId: provider.id,
+          modelId: modelId,
+          createdAt: DateTime.now(),
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          estimatedCost: 0,
+          currencyCode: provider.currencyCode,
+          responseTimeMs: responseTimeMs,
+          error: text,
+        ),
+      );
+    }
+
+    await _chatRepository.upsertConversation(
+      conversation.copyWith(updatedAt: DateTime.now()),
+    );
+  }
+
+  AIProvider? _resolveProvider() {
+    final AIProvider? detected = _settingsController.detectedProvider;
+    if (detected != null) {
+      return detected;
+    }
+
+    final String? selectedProviderId =
+        _settingsController.settings.selectedProviderId;
+    return switch (selectedProviderId) {
+      'openrouter' => AIProvider.openRouter,
+      'vsegpt' => AIProvider.vsegpt,
+      _ => null,
+    };
+  }
+
+  List<ChatCompletionMessage> _buildRequestMessages(
+    List<ChatMessage> conversationMessages,
+  ) {
+    final List<ChatCompletionMessage> requestMessages =
+        <ChatCompletionMessage>[];
+
+    final String systemPrompt = _settingsController.settings.systemPrompt
+        .trim();
+    if (systemPrompt.isNotEmpty) {
+      requestMessages.add(
+        ChatCompletionMessage(role: 'system', content: systemPrompt),
+      );
+    }
+
+    for (final ChatMessage message in conversationMessages) {
+      if (message.error != null) {
+        continue;
+      }
+
+      final String? role = switch (message.role) {
+        ChatMessageRole.user => 'user',
+        ChatMessageRole.assistant => 'assistant',
+        ChatMessageRole.system => null,
+      };
+
+      if (role != null) {
+        requestMessages.add(
+          ChatCompletionMessage(role: role, content: message.content),
+        );
+      }
+    }
+
+    return requestMessages;
   }
 
   Future<void> _reloadConversations() async {

@@ -37,6 +37,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _send() async {
+    if (widget.controller.isSending) {
+      return;
+    }
+
     final String value = _messageController.text;
     await widget.controller.sendLocalMessage(value);
     if (value.trim().isNotEmpty) {
@@ -103,6 +107,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       _ChatInputBar(
                         controller: _messageController,
                         onSend: _send,
+                        isSending: widget.controller.isSending,
                       ),
                     ],
                   ),
@@ -301,10 +306,15 @@ class _MessageList extends StatelessWidget {
 }
 
 class _ChatInputBar extends StatelessWidget {
-  const _ChatInputBar({required this.controller, required this.onSend});
+  const _ChatInputBar({
+    required this.controller,
+    required this.onSend,
+    required this.isSending,
+  });
 
   final TextEditingController controller;
   final Future<void> Function() onSend;
+  final bool isSending;
 
   @override
   Widget build(BuildContext context) {
@@ -315,6 +325,7 @@ class _ChatInputBar extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              enabled: !isSending,
               minLines: 1,
               maxLines: 5,
               decoration: const InputDecoration(
@@ -324,7 +335,16 @@ class _ChatInputBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton(onPressed: onSend, child: const Text('Send')),
+          FilledButton(
+            onPressed: isSending ? null : onSend,
+            child: isSending
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Send'),
+          ),
         ],
       ),
     );
