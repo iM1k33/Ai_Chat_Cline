@@ -1,6 +1,9 @@
 import 'package:aichatcline/app/app_theme.dart';
+import 'package:aichatcline/data/database/app_database.dart';
+import 'package:aichatcline/data/repositories/chat_repository.dart';
 import 'package:aichatcline/data/services/secure_storage_service.dart';
 import 'package:aichatcline/data/services/settings_storage_service.dart';
+import 'package:aichatcline/features/chat/state/chat_controller.dart';
 import 'package:aichatcline/features/chat/ui/chat_screen.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
@@ -15,21 +18,33 @@ class AIChatApp extends StatefulWidget {
 }
 
 class _AIChatAppState extends State<AIChatApp> {
+  late final AppDatabase _appDatabase;
+  late final ChatRepository _chatRepository;
+  late final ChatController _chatController;
   late final SettingsController _settingsController;
 
   @override
   void initState() {
     super.initState();
+
+    _appDatabase = AppDatabase();
+    _chatRepository = ChatRepository(appDatabase: _appDatabase);
+    _chatController = ChatController(chatRepository: _chatRepository);
+
     _settingsController = SettingsController(
       settingsStorage: const SettingsStorageService(),
       secureStorage: SecureStorageService(),
     );
+
     _settingsController.load();
+    _chatController.load();
   }
 
   @override
   void dispose() {
+    _chatController.dispose();
     _settingsController.dispose();
+    _appDatabase.close();
     super.dispose();
   }
 
@@ -58,6 +73,7 @@ class _AIChatAppState extends State<AIChatApp> {
       home: Builder(
         builder: (context) {
           return ChatScreen(
+            controller: _chatController,
             onOpenSettings: () => _openSettings(context),
             onOpenStatistics: () => _openStatistics(context),
           );

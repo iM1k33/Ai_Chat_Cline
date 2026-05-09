@@ -14,9 +14,11 @@ void main() {
   testWidgets('AI Chat app shell renders', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const AIChatApp());
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('AI Chat'), findsOneWidget);
-    expect(find.text('Conversation area placeholder'), findsOneWidget);
+    expect(find.byType(TextField), findsWidgets);
+    expect(find.text('New chat'), findsOneWidget);
     expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
     expect(find.byIcon(Icons.analytics_outlined), findsOneWidget);
   });
