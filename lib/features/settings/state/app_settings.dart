@@ -13,6 +13,7 @@ class AppSettings {
     this.locale = LocaleOption.system,
     this.includeMessageContentInLogs = false,
     this.modelParameters = const ModelParameters(),
+    this.isApiKeyValidated = false,
   });
 
   final String? selectedProviderId;
@@ -22,6 +23,7 @@ class AppSettings {
   final LocaleOption locale;
   final bool includeMessageContentInLogs;
   final ModelParameters modelParameters;
+  final bool isApiKeyValidated;
 
   factory AppSettings.defaults() {
     return AppSettings(
@@ -32,6 +34,7 @@ class AppSettings {
       locale: LocaleOption.system,
       includeMessageContentInLogs: false,
       modelParameters: ModelParameters.defaults(),
+      isApiKeyValidated: false,
     );
   }
 
@@ -43,6 +46,7 @@ class AppSettings {
     LocaleOption? locale,
     bool? includeMessageContentInLogs,
     ModelParameters? modelParameters,
+    bool? isApiKeyValidated,
   }) {
     return AppSettings(
       selectedProviderId: selectedProviderId ?? this.selectedProviderId,
@@ -53,6 +57,7 @@ class AppSettings {
       includeMessageContentInLogs:
           includeMessageContentInLogs ?? this.includeMessageContentInLogs,
       modelParameters: modelParameters ?? this.modelParameters,
+      isApiKeyValidated: isApiKeyValidated ?? this.isApiKeyValidated,
     );
   }
 
@@ -65,6 +70,7 @@ class AppSettings {
       'locale': localeToString(locale),
       'includeMessageContentInLogs': includeMessageContentInLogs,
       'modelParameters': modelParameters.toJson(),
+      'isApiKeyValidated': isApiKeyValidated,
     };
   }
 
@@ -80,6 +86,7 @@ class AppSettings {
       modelParameters: ModelParameters.fromJson(
         json['modelParameters'] as Map<String, dynamic>? ?? <String, dynamic>{},
       ),
+      isApiKeyValidated: json['isApiKeyValidated'] as bool? ?? false,
     );
   }
 

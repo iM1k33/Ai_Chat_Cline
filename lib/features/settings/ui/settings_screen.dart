@@ -173,6 +173,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: const Text('Save API key'),
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              'API key validated: ${controller.isApiKeyValidated ? 'Yes' : 'No'}',
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonal(
+                onPressed: (!controller.hasApiKey || controller.isValidatingApiKey)
+                    ? null
+                    : () async {
+                        await controller.validateCurrentApiKey();
+                      },
+                child: controller.isValidatingApiKey
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Validate API key'),
+              ),
+            ),
             if (controller.error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),

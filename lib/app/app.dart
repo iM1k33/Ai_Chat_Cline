@@ -10,6 +10,7 @@ import 'package:aichatcline/features/export/services/export_service.dart';
 import 'package:aichatcline/features/export/services/share_service.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
+import 'package:aichatcline/features/settings/ui/initial_setup_screen.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
 import 'package:aichatcline/features/statistics/ui/statistics_screen.dart';
@@ -45,6 +46,7 @@ class _AIChatAppState extends State<AIChatApp> {
     _settingsController = SettingsController(
       settingsStorage: const SettingsStorageService(),
       secureStorage: SecureStorageService(),
+      aiClient: _aiClient,
     );
 
     _chatController = ChatController(
@@ -103,12 +105,27 @@ class _AIChatAppState extends State<AIChatApp> {
       themeMode: ThemeMode.system,
       home: Builder(
         builder: (context) {
-          return ChatScreen(
-            controller: _chatController,
-            exportService: _exportService,
-            shareService: _shareService,
-            onOpenSettings: () => _openSettings(context),
-            onOpenStatistics: () => _openStatistics(context),
+          return AnimatedBuilder(
+            animation: _settingsController,
+            builder: (BuildContext context, _) {
+              if (_settingsController.isLoading) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (!_settingsController.isBasicApiConfigured) {
+                return InitialSetupScreen(controller: _settingsController);
+              }
+
+              return ChatScreen(
+                controller: _chatController,
+                exportService: _exportService,
+                shareService: _shareService,
+                onOpenSettings: () => _openSettings(context),
+                onOpenStatistics: () => _openStatistics(context),
+              );
+            },
           );
         },
       ),
