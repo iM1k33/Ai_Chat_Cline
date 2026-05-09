@@ -304,6 +304,22 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  Future<List<ChatMessage>> getCurrentConversationMessagesForExport() async {
+    final Conversation? conversation = currentConversation;
+    if (conversation == null) {
+      return <ChatMessage>[];
+    }
+
+    if (messages.isNotEmpty &&
+        messages.every(
+          (ChatMessage message) => message.conversationId == conversation.id,
+        )) {
+      return List<ChatMessage>.from(messages);
+    }
+
+    return _chatRepository.getMessages(conversation.id);
+  }
+
   Future<void> _insertAssistantError(
     Conversation conversation,
     String text, {

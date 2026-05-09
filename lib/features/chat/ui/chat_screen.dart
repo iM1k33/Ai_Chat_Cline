@@ -1,6 +1,9 @@
 import 'package:aichatcline/features/chat/models/chat_message.dart';
 import 'package:aichatcline/features/chat/models/conversation.dart';
 import 'package:aichatcline/features/chat/state/chat_controller.dart';
+import 'package:aichatcline/features/export/services/export_service.dart';
+import 'package:aichatcline/features/export/services/share_service.dart';
+import 'package:aichatcline/features/statistics/models/usage_record.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -9,11 +12,15 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.controller,
+    required this.exportService,
+    required this.shareService,
     this.onOpenSettings,
     this.onOpenStatistics,
   });
 
   final ChatController controller;
+  final ExportService exportService;
+  final ShareService shareService;
 
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenStatistics;
@@ -25,6 +32,140 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   late final TextEditingController _messageController;
   final DateFormat _conversationDateFormat = DateFormat('yyyy-MM-dd HH:mm');
+
+  Future<void> _openExportDialog() async {
+    final Conversation? conversation = widget.controller.currentConversation;
+    if (conversation == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No current conversation to export.'),
+        ),
+      );
+      return;
+    }
+
+    ExportFormat selectedFormat = ExportFormat.txt;
+    bool includeMetadata = false;
+
+    final bool? shouldExport = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (BuildContext context, void Function(void Function()) setState) {
+            return AlertDialog(
+              title: const Text('Export conversation'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Format'),
+                  const SizedBox(height: 8),
+                  DropdownButton<ExportFormat>(
+                    value: selectedFormat,
+                    isExpanded: true,
+                    items: const <DropdownMenuItem<ExportFormat>>[
+                      DropdownMenuItem<ExportFormat>(
+                        value: ExportFormat.txt,
+                        child: Text('TXT'),
+                      ),
+                      DropdownMenuItem<ExportFormat>(
+                        value: ExportFormat.markdown,
+                        child: Text('Markdown'),
+                      ),
+                      DropdownMenuItem<ExportFormat>(
+                        value: ExportFormat.json,
+                        child: Text('JSON'),
+                      ),
+                    ],
+                    onChanged: (ExportFormat? value) {
+                      if (value == null) {
+                        return;
+                      }
+                      setState(() {
+                        selectedFormat = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Include metadata'),
+                    value: includeMetadata,
+                    onChanged: (bool? value) {
+                      setState(() {
+                        includeMetadata = value ?? false;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Export'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (shouldExport != true) {
+      return;
+    }
+
+    try {
+      final List<ChatMessage> exportMessages =
+          await widget.controller.getCurrentConversationMessagesForExport();
+
+      final String content = widget.exportService.buildConversationExport(
+        conversation: conversation,
+        messages: exportMessages,
+        format: selectedFormat,
+        usageRecords: const <UsageRecord>[],
+        includeMetadata: includeMetadata,
+      );
+
+      final String fileName = widget.exportService.suggestedFileName(
+        conversation,
+        selectedFormat,
+      );
+
+      final file = await widget.shareService.saveExportFile(
+        fileName: fileName,
+        content: content,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export saved: ${file.path}'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to export conversation.'),
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -247,6 +388,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   icon: const Icon(Icons.menu),
                   onPressed: _openConversationSwitcher,
                 ),
+              IconButton(
+                tooltip: 'Export conversation',
+                icon: const Icon(Icons.download_outlined),
+                onPressed: widget.controller.currentConversation == null
+                    ? null
+                    : _openExportDialog,
+              ),
               IconButton(
                 tooltip: 'Statistics',
                 icon: const Icon(Icons.analytics_outlined),

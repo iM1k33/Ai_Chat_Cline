@@ -6,6 +6,8 @@ import 'package:aichatcline/data/services/secure_storage_service.dart';
 import 'package:aichatcline/data/services/settings_storage_service.dart';
 import 'package:aichatcline/features/chat/state/chat_controller.dart';
 import 'package:aichatcline/features/chat/ui/chat_screen.dart';
+import 'package:aichatcline/features/export/services/export_service.dart';
+import 'package:aichatcline/features/export/services/share_service.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
@@ -28,6 +30,8 @@ class _AIChatAppState extends State<AIChatApp> {
   late final ChatController _chatController;
   late final SettingsController _settingsController;
   late final StatisticsController _statisticsController;
+  late final ExportService _exportService;
+  late final ShareService _shareService;
 
   @override
   void initState() {
@@ -53,6 +57,9 @@ class _AIChatAppState extends State<AIChatApp> {
     _statisticsController = StatisticsController(
       statsRepository: _statsRepository,
     );
+
+    _exportService = const ExportService();
+    _shareService = const ShareService();
 
     _settingsController.load();
     _chatController.load();
@@ -98,6 +105,8 @@ class _AIChatAppState extends State<AIChatApp> {
         builder: (context) {
           return ChatScreen(
             controller: _chatController,
+            exportService: _exportService,
+            shareService: _shareService,
             onOpenSettings: () => _openSettings(context),
             onOpenStatistics: () => _openStatistics(context),
           );
