@@ -59,7 +59,9 @@ class SettingsController extends ChangeNotifier {
         await _settingsStorage.saveSettings(settings);
       }
     } catch (e) {
-      error = 'Failed to save API key';
+      final String message = e.toString().trim();
+      final String safeMessage = message.isEmpty ? 'Unknown error' : message;
+      error = 'Failed to save API key [${e.runtimeType}]: $safeMessage';
     }
 
     notifyListeners();

@@ -150,14 +150,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            if (controller.error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  controller.error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
             TextField(
               controller: _apiKeyController,
               obscureText: true,
@@ -181,6 +173,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: const Text('Save API key'),
               ),
             ),
+            if (controller.error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  controller.error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
             const SizedBox(height: 8),
             Text(
               'Detected provider: ${controller.detectedProvider?.name ?? 'Not detected'}',
