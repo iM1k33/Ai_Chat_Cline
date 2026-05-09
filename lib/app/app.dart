@@ -9,6 +9,7 @@ import 'package:aichatcline/features/chat/ui/chat_screen.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
+import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
 import 'package:aichatcline/features/statistics/ui/statistics_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -26,6 +27,7 @@ class _AIChatAppState extends State<AIChatApp> {
   late final OpenAICompatibleClient _aiClient;
   late final ChatController _chatController;
   late final SettingsController _settingsController;
+  late final StatisticsController _statisticsController;
 
   @override
   void initState() {
@@ -48,6 +50,10 @@ class _AIChatAppState extends State<AIChatApp> {
       statsRepository: _statsRepository,
     );
 
+    _statisticsController = StatisticsController(
+      statsRepository: _statsRepository,
+    );
+
     _settingsController.load();
     _chatController.load();
   }
@@ -56,6 +62,7 @@ class _AIChatAppState extends State<AIChatApp> {
   void dispose() {
     _chatController.dispose();
     _settingsController.dispose();
+    _statisticsController.dispose();
     _appDatabase.close();
     super.dispose();
   }
@@ -69,9 +76,14 @@ class _AIChatAppState extends State<AIChatApp> {
   }
 
   void _openStatistics(BuildContext context) {
+    _statisticsController.refresh();
     Navigator.of(
       context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const StatisticsScreen()));
+    ).push(
+      MaterialPageRoute<void>(
+        builder: (_) => StatisticsScreen(controller: _statisticsController),
+      ),
+    );
   }
 
   @override
