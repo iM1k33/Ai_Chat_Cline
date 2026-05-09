@@ -139,10 +139,20 @@ class _ChatScreenState extends State<ChatScreen> {
         selectedFormat,
       );
 
-      final file = await widget.shareService.saveExportFile(
+      final file = await widget.shareService.saveExportFileWithPicker(
         fileName: fileName,
         content: content,
       );
+
+      if (file == null) {
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Export cancelled')),
+        );
+        return;
+      }
 
       if (!mounted) {
         return;
