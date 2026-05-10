@@ -44,6 +44,28 @@ class _ChatScreenState extends State<ChatScreen> {
   late final TextEditingController _messageController;
   final DateFormat _conversationDateFormat = DateFormat('yyyy-MM-dd HH:mm');
 
+  Future<void> _showExportSavedDialog(String filePath) async {
+    if (!mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Export saved'),
+          content: SelectionArea(child: Text(filePath)),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _openExportDialog() async {
     final Conversation? conversation = widget.controller.currentConversation;
     if (conversation == null) {
@@ -51,9 +73,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No current conversation to export.'),
-        ),
+        const SnackBar(content: Text('No current conversation to export.')),
       );
       return;
     }
@@ -65,66 +85,67 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (BuildContext dialogContext) {
         return StatefulBuilder(
-          builder: (BuildContext context, void Function(void Function()) setState) {
-            return AlertDialog(
-              title: const Text('Export conversation'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text('Format'),
-                  const SizedBox(height: 8),
-                  DropdownButton<ExportFormat>(
-                    value: selectedFormat,
-                    isExpanded: true,
-                    items: const <DropdownMenuItem<ExportFormat>>[
-                      DropdownMenuItem<ExportFormat>(
-                        value: ExportFormat.txt,
-                        child: Text('TXT'),
+          builder:
+              (BuildContext context, void Function(void Function()) setState) {
+                return AlertDialog(
+                  title: const Text('Export conversation'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text('Format'),
+                      const SizedBox(height: 8),
+                      DropdownButton<ExportFormat>(
+                        value: selectedFormat,
+                        isExpanded: true,
+                        items: const <DropdownMenuItem<ExportFormat>>[
+                          DropdownMenuItem<ExportFormat>(
+                            value: ExportFormat.txt,
+                            child: Text('TXT'),
+                          ),
+                          DropdownMenuItem<ExportFormat>(
+                            value: ExportFormat.markdown,
+                            child: Text('Markdown'),
+                          ),
+                          DropdownMenuItem<ExportFormat>(
+                            value: ExportFormat.json,
+                            child: Text('JSON'),
+                          ),
+                        ],
+                        onChanged: (ExportFormat? value) {
+                          if (value == null) {
+                            return;
+                          }
+                          setState(() {
+                            selectedFormat = value;
+                          });
+                        },
                       ),
-                      DropdownMenuItem<ExportFormat>(
-                        value: ExportFormat.markdown,
-                        child: Text('Markdown'),
-                      ),
-                      DropdownMenuItem<ExportFormat>(
-                        value: ExportFormat.json,
-                        child: Text('JSON'),
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Include metadata'),
+                        value: includeMetadata,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            includeMetadata = value ?? false;
+                          });
+                        },
                       ),
                     ],
-                    onChanged: (ExportFormat? value) {
-                      if (value == null) {
-                        return;
-                      }
-                      setState(() {
-                        selectedFormat = value;
-                      });
-                    },
                   ),
-                  const SizedBox(height: 8),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Include metadata'),
-                    value: includeMetadata,
-                    onChanged: (bool? value) {
-                      setState(() {
-                        includeMetadata = value ?? false;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Export'),
-                ),
-              ],
-            );
-          },
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('Export'),
+                    ),
+                  ],
+                );
+              },
         );
       },
     );
@@ -134,8 +155,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      final List<ChatMessage> exportMessages =
-          await widget.controller.getCurrentConversationMessagesForExport();
+      final List<ChatMessage> exportMessages = await widget.controller
+          .getCurrentConversationMessagesForExport();
 
       final String content = widget.exportService.buildConversationExport(
         conversation: conversation,
@@ -159,9 +180,9 @@ class _ChatScreenState extends State<ChatScreen> {
         if (!mounted) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Export cancelled')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Export cancelled')));
         return;
       }
 
@@ -185,12 +206,7 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Export saved: ${file.path}'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      await _showExportSavedDialog(file.path);
     } catch (e) {
       if (!mounted) {
         return;
@@ -214,9 +230,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to export conversation.'),
-        ),
+        const SnackBar(content: Text('Failed to export conversation.')),
       );
     }
   }
@@ -415,62 +429,66 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: widget.controller.conversations.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final Conversation conversation =
-                          widget.controller.conversations[index];
-                      final bool isSelected =
-                          widget.controller.currentConversation?.id ==
-                          conversation.id;
+                  child: widget.controller.conversations.isEmpty
+                      ? const Center(child: Text('No conversations yet'))
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: widget.controller.conversations.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            final Conversation conversation =
+                                widget.controller.conversations[index];
+                            final bool isSelected =
+                                widget.controller.currentConversation?.id ==
+                                conversation.id;
 
-                      return ListTile(
-                        selected: isSelected,
-                        selectedTileColor: Theme.of(
-                          context,
-                        ).colorScheme.primaryContainer.withValues(alpha: 0.4),
-                        leading: Icon(
-                          isSelected
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_unchecked,
-                        ),
-                        title: Text(
-                          conversation.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          'Updated ${_conversationDateFormat.format(conversation.updatedAt)}',
-                        ),
-                        onTap: () async {
-                          await widget.controller.selectConversation(
-                            conversation.id,
-                          );
-                          if (bottomSheetContext.mounted) {
-                            Navigator.of(bottomSheetContext).pop();
-                          }
-                        },
-                        trailing: IconButton(
-                          tooltip: 'Delete conversation',
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: widget.controller.isStreaming
-                              ? null
-                              : () async {
-                                  final bool confirmed =
-                                      await _showDeleteConversationConfirmation();
-                                  if (!confirmed) {
-                                    return;
-                                  }
+                            return ListTile(
+                              selected: isSelected,
+                              selectedTileColor: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withValues(alpha: 0.4),
+                              leading: Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_unchecked,
+                              ),
+                              title: Text(
+                                conversation.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                'Updated ${_conversationDateFormat.format(conversation.updatedAt)}',
+                              ),
+                              onTap: () async {
+                                await widget.controller.selectConversation(
+                                  conversation.id,
+                                );
+                                if (bottomSheetContext.mounted) {
+                                  Navigator.of(bottomSheetContext).pop();
+                                }
+                              },
+                              trailing: IconButton(
+                                tooltip: 'Delete conversation',
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: widget.controller.isStreaming
+                                    ? null
+                                    : () async {
+                                        final bool confirmed =
+                                            await _showDeleteConversationConfirmation();
+                                        if (!confirmed) {
+                                          return;
+                                        }
 
-                                  await widget.controller.deleteConversation(
-                                    conversation.id,
-                                  );
-                                },
+                                        await widget.controller
+                                            .deleteConversation(
+                                              conversation.id,
+                                            );
+                                      },
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
                 ),
               ],
             ),
@@ -488,13 +506,14 @@ class _ChatScreenState extends State<ChatScreen> {
         final bool isWide = MediaQuery.of(context).size.width >= 800;
         final Conversation? currentConversation =
             widget.controller.currentConversation;
-        final String? conversationModelId =
-            currentConversation?.selectedModelId?.trim();
-        final String? conversationProviderId =
-            currentConversation?.providerId?.trim();
+        final String? conversationModelId = currentConversation?.selectedModelId
+            ?.trim();
+        final String? conversationProviderId = currentConversation?.providerId
+            ?.trim();
 
         final String providerStatusText =
-            (conversationProviderId != null && conversationProviderId.isNotEmpty)
+            (conversationProviderId != null &&
+                conversationProviderId.isNotEmpty)
             ? conversationProviderId
             : widget.providerName;
 
@@ -525,15 +544,37 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? null
                     : _openExportDialog,
               ),
-              IconButton(
-                tooltip: 'Statistics',
-                icon: const Icon(Icons.analytics_outlined),
-                onPressed: widget.onOpenStatistics,
-              ),
-              IconButton(
-                tooltip: 'Settings',
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: widget.onOpenSettings,
+              PopupMenuButton<_AppBarMenuAction>(
+                tooltip: 'More actions',
+                onSelected: (_AppBarMenuAction value) {
+                  switch (value) {
+                    case _AppBarMenuAction.statistics:
+                      widget.onOpenStatistics?.call();
+                      break;
+                    case _AppBarMenuAction.settings:
+                      widget.onOpenSettings?.call();
+                      break;
+                  }
+                },
+                itemBuilder: (BuildContext context) =>
+                    <PopupMenuEntry<_AppBarMenuAction>>[
+                      const PopupMenuItem<_AppBarMenuAction>(
+                        value: _AppBarMenuAction.statistics,
+                        child: ListTile(
+                          leading: Icon(Icons.analytics_outlined),
+                          title: Text('Statistics'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                      const PopupMenuItem<_AppBarMenuAction>(
+                        value: _AppBarMenuAction.settings,
+                        child: ListTile(
+                          leading: Icon(Icons.settings_outlined),
+                          title: Text('Settings'),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ],
               ),
             ],
           ),
@@ -581,7 +622,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: _MessageList(
                           messages: widget.controller.messages,
                           isLoading: widget.controller.isLoading,
-                          streamingMessageId: widget.controller.streamingMessageId,
+                          streamingMessageId:
+                              widget.controller.streamingMessageId,
                         ),
                       ),
                       _ChatInputBar(
@@ -624,6 +666,8 @@ class _ActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isNarrow = MediaQuery.of(context).size.width < 700;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Wrap(
@@ -653,23 +697,63 @@ class _ActionBar extends StatelessWidget {
             icon: const Icon(Icons.edit_outlined),
             label: const Text('Edit last'),
           ),
-          FilledButton.tonalIcon(
-            onPressed: controller.currentConversation == null || isStreaming
-                ? null
-                : onDeleteCurrentConversation,
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Delete current'),
-          ),
-          OutlinedButton.icon(
-            onPressed: isStreaming ? null : onDeleteAllConversations,
-            icon: const Icon(Icons.delete_sweep_outlined),
-            label: const Text('Delete all'),
-          ),
+          if (!isNarrow) ...<Widget>[
+            FilledButton.tonalIcon(
+              onPressed: controller.currentConversation == null || isStreaming
+                  ? null
+                  : onDeleteCurrentConversation,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete current'),
+            ),
+            OutlinedButton.icon(
+              onPressed: isStreaming ? null : onDeleteAllConversations,
+              icon: const Icon(Icons.delete_sweep_outlined),
+              label: const Text('Delete all'),
+            ),
+          ] else
+            PopupMenuButton<_DangerAction>(
+              enabled: !isStreaming,
+              tooltip: 'More chat actions',
+              icon: const Icon(Icons.more_horiz),
+              onSelected: (_DangerAction value) {
+                switch (value) {
+                  case _DangerAction.deleteCurrent:
+                    onDeleteCurrentConversation();
+                    break;
+                  case _DangerAction.deleteAll:
+                    onDeleteAllConversations();
+                    break;
+                }
+              },
+              itemBuilder: (BuildContext context) =>
+                  <PopupMenuEntry<_DangerAction>>[
+                    const PopupMenuItem<_DangerAction>(
+                      value: _DangerAction.deleteCurrent,
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Delete current'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const PopupMenuItem<_DangerAction>(
+                      value: _DangerAction.deleteAll,
+                      child: ListTile(
+                        leading: Icon(Icons.delete_sweep_outlined),
+                        title: Text('Delete all'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+            ),
         ],
       ),
     );
   }
 }
+
+enum _DangerAction { deleteCurrent, deleteAll }
+
+enum _AppBarMenuAction { statistics, settings }
 
 class _ProviderModelStatusBar extends StatelessWidget {
   const _ProviderModelStatusBar({
@@ -729,35 +813,38 @@ class _ConversationSidebar extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              itemCount: controller.conversations.length,
-              itemBuilder: (context, index) {
-                final Conversation conversation =
-                    controller.conversations[index];
-                final bool isSelected =
-                    controller.currentConversation?.id == conversation.id;
+            child: controller.conversations.isEmpty
+                ? const Center(child: Text('No conversations yet'))
+                : ListView.builder(
+                    itemCount: controller.conversations.length,
+                    itemBuilder: (context, index) {
+                      final Conversation conversation =
+                          controller.conversations[index];
+                      final bool isSelected =
+                          controller.currentConversation?.id == conversation.id;
 
-                return ListTile(
-                  selected: isSelected,
-                  selectedTileColor: Theme.of(
-                    context,
-                  ).colorScheme.primaryContainer.withValues(alpha: 0.4),
-                  title: Text(
-                    conversation.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                      return ListTile(
+                        selected: isSelected,
+                        selectedTileColor: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer.withValues(alpha: 0.4),
+                        title: Text(
+                          conversation.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () =>
+                            controller.selectConversation(conversation.id),
+                        trailing: IconButton(
+                          tooltip: 'Delete conversation',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: controller.isStreaming
+                              ? null
+                              : () => onDeleteConversation(conversation.id),
+                        ),
+                      );
+                    },
                   ),
-                  onTap: () => controller.selectConversation(conversation.id),
-                  trailing: IconButton(
-                    tooltip: 'Delete conversation',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: controller.isStreaming
-                        ? null
-                        : () => onDeleteConversation(conversation.id),
-                  ),
-                );
-              },
-            ),
           ),
         ],
       ),
@@ -783,9 +870,7 @@ class _MessageList extends StatelessWidget {
     }
 
     if (messages.isEmpty) {
-      return const Center(
-        child: Text('No messages yet. Send a message to start this chat.'),
-      );
+      return const Center(child: Text('Start a conversation'));
     }
 
     return ListView.builder(
@@ -796,6 +881,18 @@ class _MessageList extends StatelessWidget {
         final bool isUser = message.role == ChatMessageRole.user;
         final bool isStreamingAssistantMessage =
             !isUser && streamingMessageId == message.id;
+        final bool isErrorMessage =
+            message.error != null ||
+            message.content.trimLeft().toLowerCase().startsWith('error:');
+        final ColorScheme colorScheme = Theme.of(context).colorScheme;
+        final Color bubbleColor = isErrorMessage
+            ? colorScheme.errorContainer.withValues(alpha: 0.7)
+            : (isUser
+                  ? colorScheme.primaryContainer
+                  : colorScheme.surfaceContainerHigh);
+        final Color textColor = isErrorMessage
+            ? colorScheme.onErrorContainer
+            : (isUser ? colorScheme.onPrimaryContainer : colorScheme.onSurface);
 
         return Align(
           alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -804,9 +901,10 @@ class _MessageList extends StatelessWidget {
             margin: const EdgeInsets.symmetric(vertical: 6),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: isUser
-                  ? Theme.of(context).colorScheme.primaryContainer
-                  : Theme.of(context).colorScheme.surfaceContainerHigh,
+              color: bubbleColor,
+              border: isErrorMessage
+                  ? Border.all(color: colorScheme.error.withValues(alpha: 0.35))
+                  : null,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -817,8 +915,14 @@ class _MessageList extends StatelessWidget {
                   children: [
                     Text(
                       isUser ? 'User' : 'Assistant',
-                      style: Theme.of(context).textTheme.labelMedium,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelMedium?.copyWith(color: textColor),
                     ),
+                    if (isErrorMessage) ...<Widget>[
+                      const SizedBox(width: 6),
+                      Icon(Icons.error_outline, size: 16, color: textColor),
+                    ],
                     const SizedBox(width: 8),
                     IconButton(
                       visualDensity: VisualDensity.compact,
@@ -835,17 +939,27 @@ class _MessageList extends StatelessWidget {
                           );
                         }
                       },
-                      icon: const Icon(Icons.copy_outlined, size: 18),
+                      icon: Icon(
+                        Icons.copy_outlined,
+                        size: 18,
+                        color: textColor,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 if (isUser)
-                  Text(message.content)
+                  Text(
+                    message.content,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: textColor),
+                  )
                 else
                   _AssistantMessageContent(
                     content: message.content,
                     isStreaming: isStreamingAssistantMessage,
+                    textColor: textColor,
                   ),
               ],
             ),
@@ -860,10 +974,12 @@ class _AssistantMessageContent extends StatelessWidget {
   const _AssistantMessageContent({
     required this.content,
     required this.isStreaming,
+    required this.textColor,
   });
 
   final String content;
   final bool isStreaming;
+  final Color textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -872,14 +988,14 @@ class _AssistantMessageContent extends StatelessWidget {
     }
 
     if (isStreaming) {
-      return Text(content);
+      return Text(content, style: TextStyle(color: textColor));
     }
 
     final List<_AssistantMessageSegment> segments =
         _parseAssistantMessageSegments(content);
 
     if (segments.isEmpty) {
-      return Text(content);
+      return Text(content, style: TextStyle(color: textColor));
     }
 
     return Column(
@@ -890,12 +1006,50 @@ class _AssistantMessageContent extends StatelessWidget {
             _AssistantCodeBlock(
               code: segments[i].content,
               language: segments[i].language,
+              textColor: textColor,
             )
           else
             MarkdownBody(
               data: segments[i].content,
               shrinkWrap: true,
               selectable: true,
+              styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
+                  .copyWith(
+                    p: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: textColor),
+                    listBullet: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: textColor),
+                    strong: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: textColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    em: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: textColor,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    blockquote: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: textColor),
+                    code: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: textColor,
+                      fontFamily: 'monospace',
+                    ),
+                    h1: Theme.of(
+                      context,
+                    ).textTheme.titleLarge?.copyWith(color: textColor),
+                    h2: Theme.of(
+                      context,
+                    ).textTheme.titleMedium?.copyWith(color: textColor),
+                    h3: Theme.of(
+                      context,
+                    ).textTheme.titleSmall?.copyWith(color: textColor),
+                    a: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
             ),
           if (i < segments.length - 1) const SizedBox(height: 10),
         ],
@@ -905,10 +1059,15 @@ class _AssistantMessageContent extends StatelessWidget {
 }
 
 class _AssistantCodeBlock extends StatelessWidget {
-  const _AssistantCodeBlock({required this.code, this.language});
+  const _AssistantCodeBlock({
+    required this.code,
+    required this.textColor,
+    this.language,
+  });
 
   final String code;
   final String? language;
+  final Color textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -932,7 +1091,9 @@ class _AssistantCodeBlock extends StatelessWidget {
               Expanded(
                 child: Text(
                   trimmedLanguage.isEmpty ? 'Code' : trimmedLanguage,
-                  style: Theme.of(context).textTheme.labelSmall,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: textColor),
                 ),
               ),
               IconButton(
@@ -946,7 +1107,7 @@ class _AssistantCodeBlock extends StatelessWidget {
                     );
                   }
                 },
-                icon: const Icon(Icons.copy_outlined, size: 18),
+                icon: Icon(Icons.copy_outlined, size: 18, color: textColor),
               ),
             ],
           ),
@@ -957,6 +1118,7 @@ class _AssistantCodeBlock extends StatelessWidget {
               code,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontFamily: 'monospace',
+                color: textColor,
               ),
             ),
           ),
@@ -980,8 +1142,7 @@ class _AssistantMessageSegment {
 }
 
 List<_AssistantMessageSegment> _parseAssistantMessageSegments(String content) {
-  final List<_AssistantMessageSegment> segments =
-      <_AssistantMessageSegment>[];
+  final List<_AssistantMessageSegment> segments = <_AssistantMessageSegment>[];
   final List<String> lines = content.split('\n');
 
   StringBuffer markdownBuffer = StringBuffer();
@@ -1084,10 +1245,7 @@ class _ChatInputBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           if (isStreaming)
-            FilledButton.tonal(
-              onPressed: onStop,
-              child: const Text('Stop'),
-            )
+            FilledButton.tonal(onPressed: onStop, child: const Text('Stop'))
           else
             FilledButton(
               onPressed: isSending ? null : onSend,

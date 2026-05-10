@@ -68,7 +68,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         final Map<String, int> modelRequests = controller.requestCountByModel;
         final Map<String, int> modelTokens = controller.totalTokensByModel;
         final Map<String, double> modelCost = controller.estimatedCostByModel;
-        final Map<String, int> providerTokens = controller.totalTokensByProvider;
+        final Map<String, int> providerTokens =
+            controller.totalTokensByProvider;
         final List<String> modelIds = modelRequests.keys.toList();
 
         return Scaffold(
@@ -95,9 +96,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         await controller.deleteAllStatistics();
                         if (context.mounted && controller.error == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Statistics deleted'),
-                            ),
+                            const SnackBar(content: Text('Statistics deleted')),
                           );
                         }
                       },
@@ -170,7 +169,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       _SectionCard(
                         title: 'By model',
                         child: modelIds.isEmpty
-                            ? const Text('No records')
+                            ? const Text('No statistics yet')
                             : Column(
                                 children: modelIds.map((String modelId) {
                                   return Padding(
@@ -180,9 +179,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                       padding: const EdgeInsets.all(10),
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .surfaceContainerLow,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerLow,
                                       ),
                                       child: Column(
                                         crossAxisAlignment:
@@ -215,15 +214,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       _SectionCard(
                         title: 'Tokens by provider',
                         child: providerTokens.isEmpty
-                            ? const Text('No records')
+                            ? const Text('No statistics yet')
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: providerTokens.entries.map((entry) {
                                   return Padding(
                                     padding: const EdgeInsets.only(bottom: 6),
-                                    child: Text(
-                                      '${entry.key}: ${entry.value}',
-                                    ),
+                                    child: Text('${entry.key}: ${entry.value}'),
                                   );
                                 }).toList(),
                               ),
@@ -232,9 +229,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                       _SectionCard(
                         title: 'Recent records',
                         child: controller.records.isEmpty
-                            ? const Text('No records')
+                            ? const Text('No statistics yet')
                             : Column(
-                                children: controller.records.map((UsageRecord record) {
+                                children: controller.records.map((
+                                  UsageRecord record,
+                                ) {
                                   final String errorText = record.error ?? '-';
                                   final String responseTimeText =
                                       record.responseTimeMs?.toString() ?? '-';
@@ -245,24 +244,30 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                       padding: const EdgeInsets.all(10),
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .surfaceContainerLow,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerLow,
                                       ),
                                       child: Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: <Widget>[
                                           Text(
-                                            _dateFormat.format(record.createdAt),
+                                            _dateFormat.format(
+                                              record.createdAt,
+                                            ),
                                             style: Theme.of(
                                               context,
                                             ).textTheme.labelLarge,
                                           ),
                                           const SizedBox(height: 6),
-                                          Text('Provider: ${record.providerId}'),
+                                          Text(
+                                            'Provider: ${record.providerId}',
+                                          ),
                                           Text('Model: ${record.modelId}'),
-                                          Text('Total tokens: ${record.totalTokens}'),
+                                          Text(
+                                            'Total tokens: ${record.totalTokens}',
+                                          ),
                                           Text(
                                             'Estimated cost: ${_formatDouble(record.estimatedCost)} ${record.currencyCode}',
                                           ),

@@ -200,7 +200,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Align(
               alignment: Alignment.centerLeft,
               child: FilledButton.tonal(
-                onPressed: (!controller.hasApiKey || controller.isValidatingApiKey)
+                onPressed:
+                    (!controller.hasApiKey || controller.isValidatingApiKey)
                     ? null
                     : () async {
                         await controller.validateCurrentApiKey();
@@ -289,8 +290,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'prompt ${model.promptPrice}',
                       if (model.completionPrice != null)
                         'completion ${model.completionPrice}',
-                      if (model.currencyCode != null)
-                        model.currencyCode!,
+                      if (model.currencyCode != null) model.currencyCode!,
                     ].join(' • ');
 
                     return ListTile(
@@ -315,6 +315,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: _modelIdController,
               decoration: const InputDecoration(
                 labelText: 'Default model for new chats',
+                helperText: 'Used when you create a new conversation.',
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (value) async {
@@ -326,7 +327,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               alignment: Alignment.centerLeft,
               child: FilledButton.tonal(
                 onPressed: () async {
-                  await modelCatalogController.selectModelById(_modelIdController.text);
+                  await modelCatalogController.selectModelById(
+                    _modelIdController.text,
+                  );
                 },
                 child: const Text('Save model ID'),
               ),
@@ -338,6 +341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               maxLines: 5,
               decoration: const InputDecoration(
                 labelText: 'Global system prompt',
+                helperText: 'Applied to all new chat requests.',
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (_) async {
@@ -409,7 +413,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 12),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Include message content in logs'),
+              title: const Text('Include short message snippets in logs'),
+              subtitle: const Text(
+                'Keeps logs compact by storing up to 300 characters per snippet.',
+              ),
               value: settings.includeMessageContentInLogs,
               onChanged: (value) async {
                 await controller.updateIncludeMessageContentInLogs(

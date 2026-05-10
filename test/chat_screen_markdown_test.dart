@@ -15,9 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('assistant markdown renders and code block copy button is shown', (
-    WidgetTester tester,
-  ) async {
+  Future<(ChatController, ModelCatalogController)> buildControllers() async {
     final AppDatabase appDatabase = AppDatabase();
     final SettingsController settingsController = SettingsController(
       settingsStorage: const SettingsStorageService(),
@@ -38,67 +36,54 @@ void main() {
       statsRepository: StatsRepository(appDatabase: appDatabase),
     );
 
-    chatController.messages = <ChatMessage>[
-      ChatMessage(
-        id: 'assistant-1',
-        conversationId: 'conv-1',
-        role: ChatMessageRole.assistant,
-        content: '# Title\n\n```dart\nprint("hello");\n```',
-        createdAt: DateTime.now(),
-      ),
-    ];
+    return (chatController, modelCatalogController);
+  }
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ChatScreen(
-          controller: chatController,
-          modelCatalogController: modelCatalogController,
-          exportService: const ExportService(),
-          shareService: const ShareService(),
-          providerName: 'OpenRouter',
+  testWidgets(
+    'assistant markdown renders and code block copy button is shown',
+    (WidgetTester tester) async {
+      final (
+        ChatController chatController,
+        ModelCatalogController modelCatalogController,
+      ) = await buildControllers();
+
+      chatController.messages = <ChatMessage>[
+        ChatMessage(
+          id: 'assistant-1',
+          conversationId: 'conv-1',
+          role: ChatMessageRole.assistant,
+          content: '# Title\n\n```dart\nprint("hello");\n```',
+          createdAt: DateTime.now(),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      ];
 
-    expect(find.text('Title'), findsOneWidget);
-    expect(find.byTooltip('Copy code'), findsOneWidget);
-  });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScreen(
+            controller: chatController,
+            modelCatalogController: modelCatalogController,
+            exportService: const ExportService(),
+            shareService: const ShareService(),
+            providerName: 'OpenRouter',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-  testWidgets('streaming assistant message with incomplete fence renders safely', (
+      expect(find.text('Title'), findsOneWidget);
+      expect(find.byTooltip('Copy code'), findsOneWidget);
+    },
+  );
+
+  testWidgets('empty state shows Start a conversation', (
     WidgetTester tester,
   ) async {
-    final AppDatabase appDatabase = AppDatabase();
-    final SettingsController settingsController = SettingsController(
-      settingsStorage: const SettingsStorageService(),
-      secureStorage: SecureStorageService(),
-      aiClient: OpenAICompatibleClient(),
-    );
-    final ModelCatalogController modelCatalogController =
-        ModelCatalogController(
-          aiClient: OpenAICompatibleClient(),
-          settingsController: settingsController,
-        );
+    final (
+      ChatController chatController,
+      ModelCatalogController modelCatalogController,
+    ) = await buildControllers();
 
-    final ChatController chatController = ChatController(
-      chatRepository: ChatRepository(appDatabase: appDatabase),
-      settingsController: settingsController,
-      modelCatalogController: modelCatalogController,
-      aiClient: OpenAICompatibleClient(),
-      statsRepository: StatsRepository(appDatabase: appDatabase),
-    );
-
-    chatController.messages = <ChatMessage>[
-      ChatMessage(
-        id: 'assistant-streaming-1',
-        conversationId: 'conv-1',
-        role: ChatMessageRole.assistant,
-        content: '```dart\nprint("partial")',
-        createdAt: DateTime.now(),
-      ),
-    ];
-    chatController.isStreaming = true;
-    chatController.streamingMessageId = 'assistant-streaming-1';
+    chatController.messages = <ChatMessage>[];
 
     await tester.pumpWidget(
       MaterialApp(
@@ -113,7 +98,79 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('print("partial")'), findsOneWidget);
-    expect(find.byTooltip('Copy code'), findsNothing);
+    expect(find.text('Start a conversation'), findsOneWidget);
   });
+
+  testWidgets('assistant error message has subtle error styling icon', (
+    WidgetTester tester,
+  ) async {
+    final (
+      ChatController chatController,
+      ModelCatalogController modelCatalogController,
+    ) = await buildControllers();
+
+    chatController.messages = <ChatMessage>[
+      ChatMessage(
+        id: 'assistant-error-1',
+        conversationId: 'conv-1',
+        role: ChatMessageRole.assistant,
+        content: 'Error: test failure',
+        createdAt: DateTime.now(),
+        error: 'test failure',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          controller: chatController,
+          modelCatalogController: modelCatalogController,
+          exportService: const ExportService(),
+          shareService: const ShareService(),
+          providerName: 'OpenRouter',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+  });
+
+  testWidgets(
+    'streaming assistant message with incomplete fence renders safely',
+    (WidgetTester tester) async {
+      final (
+        ChatController chatController,
+        ModelCatalogController modelCatalogController,
+      ) = await buildControllers();
+
+      chatController.messages = <ChatMessage>[
+        ChatMessage(
+          id: 'assistant-streaming-1',
+          conversationId: 'conv-1',
+          role: ChatMessageRole.assistant,
+          content: '```dart\nprint("partial")',
+          createdAt: DateTime.now(),
+        ),
+      ];
+      chatController.isStreaming = true;
+      chatController.streamingMessageId = 'assistant-streaming-1';
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScreen(
+            controller: chatController,
+            modelCatalogController: modelCatalogController,
+            exportService: const ExportService(),
+            shareService: const ShareService(),
+            providerName: 'OpenRouter',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('print("partial")'), findsOneWidget);
+      expect(find.byTooltip('Copy code'), findsNothing);
+    },
+  );
 }

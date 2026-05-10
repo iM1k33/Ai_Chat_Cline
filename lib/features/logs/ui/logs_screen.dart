@@ -117,9 +117,9 @@ class _LogsScreenState extends State<LogsScreen> {
       return;
     }
 
-    final String content = const JsonEncoder.withIndent('  ').convert(
-      _logs.map((AppLogEntry entry) => entry.toJson()).toList(),
-    );
+    final String content = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(_logs.map((AppLogEntry entry) => entry.toJson()).toList());
 
     final String fileName =
         'logs_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.json';
@@ -152,6 +152,24 @@ class _LogsScreenState extends State<LogsScreen> {
     }
 
     return '${value.substring(0, 220)}...';
+  }
+
+  Color _levelColor(String level, ColorScheme colorScheme) {
+    final String normalized = level.toLowerCase();
+    return switch (normalized) {
+      'error' => colorScheme.error,
+      'warning' => colorScheme.tertiary,
+      _ => colorScheme.primary,
+    };
+  }
+
+  IconData _levelIcon(String level) {
+    final String normalized = level.toLowerCase();
+    return switch (normalized) {
+      'error' => Icons.error_outline,
+      'warning' => Icons.warning_amber_outlined,
+      _ => Icons.info_outline,
+    };
   }
 
   @override
@@ -209,18 +227,51 @@ class _LogsScreenState extends State<LogsScreen> {
                                 style: Theme.of(context).textTheme.labelLarge,
                               ),
                               const SizedBox(height: 4),
-                              Text(
-                                '${entry.level.toUpperCase()} • ${entry.category}',
-                                style: Theme.of(context).textTheme.titleSmall,
+                              Row(
+                                children: <Widget>[
+                                  Icon(
+                                    _levelIcon(entry.level),
+                                    size: 16,
+                                    color: _levelColor(
+                                      entry.level,
+                                      Theme.of(context).colorScheme,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${entry.level.toUpperCase()} • ${entry.category}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          color: _levelColor(
+                                            entry.level,
+                                            Theme.of(context).colorScheme,
+                                          ),
+                                        ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 6),
                               Text(entry.message),
                               if (entry.metadata != null &&
                                   entry.metadata!.isNotEmpty) ...<Widget>[
                                 const SizedBox(height: 6),
-                                Text(
-                                  _compactMetadata(entry.metadata!),
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerLow,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: SelectableText(
+                                    _compactMetadata(entry.metadata!),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
                                 ),
                               ],
                             ],
