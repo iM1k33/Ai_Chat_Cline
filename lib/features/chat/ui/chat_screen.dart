@@ -205,6 +205,51 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _openEditLastMessageDialog() async {
+    final ChatMessage? lastUser = widget.controller.lastUserMessage;
+    if (lastUser == null) {
+      return;
+    }
+
+    final TextEditingController controller = TextEditingController(
+      text: lastUser.content,
+    );
+
+    final bool? shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Edit last user message'),
+          content: TextField(
+            controller: controller,
+            minLines: 3,
+            maxLines: 8,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'Edit your message...',
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Save & resend'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldSave == true) {
+      await widget.controller.editLastUserMessageAndResend(controller.text);
+    }
+
+    controller.dispose();
+  }
+
   Future<bool> _showDeleteCurrentConversationConfirmation() async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -442,6 +487,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       _ActionBar(
                         controller: widget.controller,
                         showCompactNewChat: !isWide,
+                        onEditLastMessage: _openEditLastMessageDialog,
                         onRegenerateLastResponse:
                             widget.controller.regenerateLastAssistantResponse,
                         onDeleteCurrentConversation:
@@ -490,6 +536,7 @@ class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.controller,
     required this.showCompactNewChat,
+    required this.onEditLastMessage,
     required this.onRegenerateLastResponse,
     required this.onDeleteCurrentConversation,
     required this.onDeleteAllConversations,
@@ -497,6 +544,7 @@ class _ActionBar extends StatelessWidget {
 
   final ChatController controller;
   final bool showCompactNewChat;
+  final Future<void> Function() onEditLastMessage;
   final Future<void> Function() onRegenerateLastResponse;
   final Future<void> Function() onDeleteCurrentConversation;
   final Future<void> Function() onDeleteAllConversations;
@@ -519,6 +567,13 @@ class _ActionBar extends StatelessWidget {
             onPressed: controller.isSending ? null : onRegenerateLastResponse,
             icon: const Icon(Icons.refresh),
             label: const Text('Regenerate'),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: controller.isSending || controller.lastUserMessage == null
+                ? null
+                : onEditLastMessage,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Edit last'),
           ),
           FilledButton.tonalIcon(
             onPressed: controller.currentConversation == null

@@ -36,6 +36,15 @@ class ChatController extends ChangeNotifier {
   bool isSending = false;
   String? error;
 
+  ChatMessage? get lastUserMessage {
+    for (int i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role == ChatMessageRole.user) {
+        return messages[i];
+      }
+    }
+    return null;
+  }
+
   Future<void> load() async {
     isLoading = true;
     error = null;
@@ -223,6 +232,71 @@ class ChatController extends ChangeNotifier {
       await selectConversation(conversation.id);
     } catch (_) {
       error = 'Failed to regenerate response';
+      isSending = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> editLastUserMessageAndResend(String newContent) async {
+    if (isSending) {
+      return;
+    }
+
+    final String trimmed = newContent.trim();
+    if (trimmed.isEmpty) {
+      error = 'Message cannot be empty.';
+      notifyListeners();
+      return;
+    }
+
+    final Conversation? conversation = currentConversation;
+    if (conversation == null) {
+      error = 'No user message to edit.';
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final List<ChatMessage> currentMessages = await _chatRepository.getMessages(
+        conversation.id,
+      );
+
+      ChatMessage? latestUser;
+      for (int i = currentMessages.length - 1; i >= 0; i--) {
+        if (currentMessages[i].role == ChatMessageRole.user) {
+          latestUser = currentMessages[i];
+          break;
+        }
+      }
+
+      if (latestUser == null) {
+        error = 'No user message to edit.';
+        notifyListeners();
+        return;
+      }
+
+      await _chatRepository.updateMessageContent(latestUser.id, trimmed);
+      await _chatRepository.deleteMessagesAfter(
+        conversation.id,
+        latestUser.createdAt,
+      );
+
+      final List<ChatMessage> refreshed = await _chatRepository.getMessages(
+        conversation.id,
+      );
+      messages = refreshed;
+      error = null;
+      notifyListeners();
+
+      await _sendAssistantCompletion(
+        conversation: conversation,
+        completionMessages: _buildRequestMessages(refreshed),
+      );
+
+      await _reloadConversations();
+      await selectConversation(conversation.id);
+    } catch (_) {
+      error = 'Failed to edit and resend message';
       isSending = false;
       notifyListeners();
     }

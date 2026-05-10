@@ -113,6 +113,28 @@ class ChatRepository {
     );
   }
 
+  Future<void> updateMessageContent(String messageId, String newContent) async {
+    final Database db = await _appDatabase.database;
+    await db.update(
+      DatabaseTables.messages,
+      <String, Object?>{'content': newContent},
+      where: 'id = ?',
+      whereArgs: <Object?>[messageId],
+    );
+  }
+
+  Future<void> deleteMessagesAfter(
+    String conversationId,
+    DateTime createdAt,
+  ) async {
+    final Database db = await _appDatabase.database;
+    await db.delete(
+      DatabaseTables.messages,
+      where: 'conversation_id = ? AND created_at > ?',
+      whereArgs: <Object?>[conversationId, createdAt.toIso8601String()],
+    );
+  }
+
   Map<String, Object?> _conversationToMap(Conversation conversation) {
     return <String, Object?>{
       'id': conversation.id,
