@@ -442,6 +442,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       _ActionBar(
                         controller: widget.controller,
                         showCompactNewChat: !isWide,
+                        onRegenerateLastResponse:
+                            widget.controller.regenerateLastAssistantResponse,
                         onDeleteCurrentConversation:
                             _confirmAndDeleteCurrentConversation,
                         onDeleteAllConversations:
@@ -488,12 +490,14 @@ class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.controller,
     required this.showCompactNewChat,
+    required this.onRegenerateLastResponse,
     required this.onDeleteCurrentConversation,
     required this.onDeleteAllConversations,
   });
 
   final ChatController controller;
   final bool showCompactNewChat;
+  final Future<void> Function() onRegenerateLastResponse;
   final Future<void> Function() onDeleteCurrentConversation;
   final Future<void> Function() onDeleteAllConversations;
 
@@ -511,6 +515,11 @@ class _ActionBar extends StatelessWidget {
               icon: const Icon(Icons.add_comment_outlined),
               label: const Text('New chat'),
             ),
+          FilledButton.tonalIcon(
+            onPressed: controller.isSending ? null : onRegenerateLastResponse,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Regenerate'),
+          ),
           FilledButton.tonalIcon(
             onPressed: controller.currentConversation == null
                 ? null

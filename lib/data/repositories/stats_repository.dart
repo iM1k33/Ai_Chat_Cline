@@ -15,7 +15,7 @@ class StatsRepository {
     await db.insert(
       DatabaseTables.usageRecords,
       record.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+      conflictAlgorithm: ConflictAlgorithm.abort,
     );
   }
 

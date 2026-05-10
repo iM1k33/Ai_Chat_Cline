@@ -104,6 +104,15 @@ class ChatRepository {
     );
   }
 
+  Future<void> deleteMessage(String messageId) async {
+    final Database db = await _appDatabase.database;
+    await db.delete(
+      DatabaseTables.messages,
+      where: 'id = ?',
+      whereArgs: <Object?>[messageId],
+    );
+  }
+
   Map<String, Object?> _conversationToMap(Conversation conversation) {
     return <String, Object?>{
       'id': conversation.id,

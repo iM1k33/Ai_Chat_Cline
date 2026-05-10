@@ -139,133 +139,90 @@ class ChatController extends ChangeNotifier {
       messages = await _chatRepository.getMessages(baseConversation.id);
       notifyListeners();
 
-      final String apiKey = _settingsController.apiKey.trim();
-      final String? selectedModelId = _settingsController
-          .settings
-          .selectedModelId
-          ?.trim();
-      final AIProvider? provider = _resolveProvider();
-
-      if (provider == null) {
-        await _insertAssistantError(
-          baseConversation,
-          'Error: Provider is not configured. Select OpenRouter or VSEGPT in settings.',
-        );
-        return;
-      }
-
-      if (apiKey.isEmpty) {
-        await _insertAssistantError(
-          baseConversation,
-          'Error: API key is missing. Set it in settings.',
-          provider: provider,
-          modelId: selectedModelId,
-        );
-        return;
-      }
-
-      if (selectedModelId == null || selectedModelId.isEmpty) {
-        await _insertAssistantError(
-          baseConversation,
-          'Error: Model ID is missing. Set it in settings.',
-          provider: provider,
-          modelId: selectedModelId,
-        );
-        return;
-      }
-
-      final List<ChatCompletionMessage> requestMessages = _buildRequestMessages(
-        messages,
+      await _sendAssistantCompletion(
+        conversation: baseConversation,
+        completionMessages: _buildRequestMessages(messages),
       );
-
-      final ChatCompletionRequest request = ChatCompletionRequest(
-        model: selectedModelId,
-        messages: requestMessages,
-        temperature: _settingsController.settings.modelParameters.temperature,
-        maxTokens: _settingsController.settings.modelParameters.maxTokens,
-        topP: _settingsController.settings.modelParameters.topP,
-        frequencyPenalty:
-            _settingsController.settings.modelParameters.frequencyPenalty,
-        presencePenalty:
-            _settingsController.settings.modelParameters.presencePenalty,
-        stream: false,
-      );
-
-      isSending = true;
-      error = null;
-      notifyListeners();
-
-      final Stopwatch stopwatch = Stopwatch()..start();
-
-      try {
-        final ChatCompletionResponse response = await _aiClient
-            .createChatCompletion(
-              provider: provider,
-              apiKey: apiKey,
-              request: request,
-            );
-        stopwatch.stop();
-
-        final ChatMessage assistantMessage = ChatMessage(
-          id: _uuid.v4(),
-          conversationId: baseConversation.id,
-          role: ChatMessageRole.assistant,
-          content: response.content,
-          createdAt: DateTime.now(),
-          modelId: response.model ?? selectedModelId,
-          providerId: response.providerId ?? provider.id,
-          promptTokens: response.promptTokens,
-          completionTokens: response.completionTokens,
-          totalTokens: response.totalTokens,
-          estimatedCost: 0,
-          error: null,
-        );
-
-        await _chatRepository.insertMessage(assistantMessage);
-
-        await _statsRepository.insertUsageRecord(
-          UsageRecord(
-            id: _uuid.v4(),
-            conversationId: baseConversation.id,
-            messageId: assistantMessage.id,
-            providerId: response.providerId ?? provider.id,
-            modelId: response.model ?? selectedModelId,
-            createdAt: DateTime.now(),
-            promptTokens: response.promptTokens ?? 0,
-            completionTokens: response.completionTokens ?? 0,
-            totalTokens: response.totalTokens ?? 0,
-            estimatedCost: 0,
-            currencyCode: provider.currencyCode,
-            responseTimeMs: stopwatch.elapsedMilliseconds,
-            error: null,
-          ),
-        );
-
-        await _chatRepository.upsertConversation(
-          baseConversation.copyWith(updatedAt: DateTime.now()),
-        );
-      } catch (e) {
-        stopwatch.stop();
-
-        final String safeError = e is AppException
-            ? e.message
-            : 'Failed to get response from provider';
-
-        await _insertAssistantError(
-          baseConversation,
-          'Error: $safeError',
-          provider: provider,
-          modelId: selectedModelId,
-          responseTimeMs: stopwatch.elapsedMilliseconds,
-        );
-      } finally {
-        isSending = false;
-      }
 
       await _reloadConversations();
       await selectConversation(baseConversation.id);
     } catch (_) {
       error = 'Failed to send message';
+      isSending = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> regenerateLastAssistantResponse() async {
+    if (isSending) {
+      return;
+    }
+
+    final Conversation? conversation = currentConversation;
+    if (conversation == null) {
+      error = 'Nothing to regenerate.';
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final List<ChatMessage> currentMessages = await _chatRepository.getMessages(
+        conversation.id,
+      );
+
+      int assistantIndex = -1;
+      for (int i = currentMessages.length - 1; i >= 0; i--) {
+        if (currentMessages[i].role == ChatMessageRole.assistant) {
+          assistantIndex = i;
+          break;
+        }
+      }
+
+      if (assistantIndex <= 0) {
+        error = 'Nothing to regenerate.';
+        notifyListeners();
+        return;
+      }
+
+      int userIndex = -1;
+      for (int i = assistantIndex - 1; i >= 0; i--) {
+        if (currentMessages[i].role == ChatMessageRole.user) {
+          userIndex = i;
+          break;
+        }
+      }
+
+      if (userIndex < 0) {
+        error = 'Nothing to regenerate.';
+        notifyListeners();
+        return;
+      }
+
+      final ChatMessage lastAssistant = currentMessages[assistantIndex];
+      await _chatRepository.deleteMessage(lastAssistant.id);
+
+      final List<ChatMessage> refreshed = await _chatRepository.getMessages(
+        conversation.id,
+      );
+      messages = refreshed;
+      error = null;
+      notifyListeners();
+
+      final List<ChatMessage> historyUpToUser = refreshed
+          .where((ChatMessage message) =>
+              message.createdAt.isBefore(lastAssistant.createdAt) ||
+              message.id == currentMessages[userIndex].id)
+          .toList();
+
+      await _sendAssistantCompletion(
+        conversation: conversation,
+        completionMessages: _buildRequestMessages(historyUpToUser),
+      );
+
+      await _reloadConversations();
+      await selectConversation(conversation.id);
+    } catch (_) {
+      error = 'Failed to regenerate response';
       isSending = false;
       notifyListeners();
     }
@@ -367,6 +324,129 @@ class ChatController extends ChangeNotifier {
     await _chatRepository.upsertConversation(
       conversation.copyWith(updatedAt: DateTime.now()),
     );
+  }
+
+  Future<void> _sendAssistantCompletion({
+    required Conversation conversation,
+    required List<ChatCompletionMessage> completionMessages,
+  }) async {
+    final String apiKey = _settingsController.apiKey.trim();
+    final String? selectedModelId = _settingsController
+        .settings
+        .selectedModelId
+        ?.trim();
+    final AIProvider? provider = _resolveProvider();
+
+    if (provider == null) {
+      await _insertAssistantError(
+        conversation,
+        'Error: Provider is not configured. Select OpenRouter or VSEGPT in settings.',
+      );
+      return;
+    }
+
+    if (apiKey.isEmpty) {
+      await _insertAssistantError(
+        conversation,
+        'Error: API key is missing. Set it in settings.',
+        provider: provider,
+        modelId: selectedModelId,
+      );
+      return;
+    }
+
+    if (selectedModelId == null || selectedModelId.isEmpty) {
+      await _insertAssistantError(
+        conversation,
+        'Error: Model ID is missing. Set it in settings.',
+        provider: provider,
+        modelId: selectedModelId,
+      );
+      return;
+    }
+
+    final ChatCompletionRequest request = ChatCompletionRequest(
+      model: selectedModelId,
+      messages: completionMessages,
+      temperature: _settingsController.settings.modelParameters.temperature,
+      maxTokens: _settingsController.settings.modelParameters.maxTokens,
+      topP: _settingsController.settings.modelParameters.topP,
+      frequencyPenalty:
+          _settingsController.settings.modelParameters.frequencyPenalty,
+      presencePenalty:
+          _settingsController.settings.modelParameters.presencePenalty,
+      stream: false,
+    );
+
+    isSending = true;
+    error = null;
+    notifyListeners();
+
+    final Stopwatch stopwatch = Stopwatch()..start();
+
+    try {
+      final ChatCompletionResponse response = await _aiClient.createChatCompletion(
+        provider: provider,
+        apiKey: apiKey,
+        request: request,
+      );
+      stopwatch.stop();
+
+      final ChatMessage assistantMessage = ChatMessage(
+        id: _uuid.v4(),
+        conversationId: conversation.id,
+        role: ChatMessageRole.assistant,
+        content: response.content,
+        createdAt: DateTime.now(),
+        modelId: response.model ?? selectedModelId,
+        providerId: response.providerId ?? provider.id,
+        promptTokens: response.promptTokens,
+        completionTokens: response.completionTokens,
+        totalTokens: response.totalTokens,
+        estimatedCost: 0,
+        error: null,
+      );
+
+      await _chatRepository.insertMessage(assistantMessage);
+
+      await _statsRepository.insertUsageRecord(
+        UsageRecord(
+          id: _uuid.v4(),
+          conversationId: conversation.id,
+          messageId: assistantMessage.id,
+          providerId: response.providerId ?? provider.id,
+          modelId: response.model ?? selectedModelId,
+          createdAt: DateTime.now(),
+          promptTokens: response.promptTokens ?? 0,
+          completionTokens: response.completionTokens ?? 0,
+          totalTokens: response.totalTokens ?? 0,
+          estimatedCost: 0,
+          currencyCode: provider.currencyCode,
+          responseTimeMs: stopwatch.elapsedMilliseconds,
+          error: null,
+        ),
+      );
+
+      await _chatRepository.upsertConversation(
+        conversation.copyWith(updatedAt: DateTime.now()),
+      );
+    } catch (e) {
+      stopwatch.stop();
+
+      final String safeError = e is AppException
+          ? e.message
+          : 'Failed to get response from provider';
+
+      await _insertAssistantError(
+        conversation,
+        'Error: $safeError',
+        provider: provider,
+        modelId: selectedModelId,
+        responseTimeMs: stopwatch.elapsedMilliseconds,
+      );
+    } finally {
+      isSending = false;
+    }
   }
 
   AIProvider? _resolveProvider() {
