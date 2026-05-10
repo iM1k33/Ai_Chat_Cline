@@ -48,6 +48,21 @@ class ModelCatalogController extends ChangeNotifier {
     }).toList();
   }
 
+  AIModel? findModelById(String modelId) {
+    final String normalized = modelId.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+
+    for (final AIModel model in models) {
+      if (model.id == normalized) {
+        return model;
+      }
+    }
+
+    return null;
+  }
+
   Future<void> loadModels() async {
     if (!_settingsController.isApiKeyValidated ||
         !_settingsController.hasRecognizedProvider) {

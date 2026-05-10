@@ -52,16 +52,17 @@ class _AIChatAppState extends State<AIChatApp> {
       aiClient: _aiClient,
     );
 
-    _chatController = ChatController(
-      chatRepository: _chatRepository,
-      settingsController: _settingsController,
-      aiClient: _aiClient,
-      statsRepository: _statsRepository,
-    );
-
     _modelCatalogController = ModelCatalogController(
       aiClient: _aiClient,
       settingsController: _settingsController,
+    );
+
+    _chatController = ChatController(
+      chatRepository: _chatRepository,
+      settingsController: _settingsController,
+      modelCatalogController: _modelCatalogController,
+      aiClient: _aiClient,
+      statsRepository: _statsRepository,
     );
 
     _statisticsController = StatisticsController(

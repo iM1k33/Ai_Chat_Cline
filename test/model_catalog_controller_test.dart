@@ -36,4 +36,46 @@ void main() {
     final List<AIModel> all = controller.search('');
     expect(all.length, 3);
   });
+
+  test('findModelById returns model on exact id match', () {
+    final SettingsController settingsController = SettingsController(
+      settingsStorage: const SettingsStorageService(),
+      secureStorage: SecureStorageService(),
+      aiClient: OpenAICompatibleClient(),
+    );
+
+    final ModelCatalogController controller = ModelCatalogController(
+      aiClient: OpenAICompatibleClient(),
+      settingsController: settingsController,
+    );
+
+    controller.models = <AIModel>[
+      const AIModel(
+        id: 'openrouter/gpt-4o',
+        name: 'GPT-4o',
+        providerId: 'openrouter',
+      ),
+    ];
+
+    final AIModel? found = controller.findModelById('openrouter/gpt-4o');
+    expect(found, isNotNull);
+    expect(found!.name, 'GPT-4o');
+  });
+
+  test('findModelById returns null when model is missing', () {
+    final SettingsController settingsController = SettingsController(
+      settingsStorage: const SettingsStorageService(),
+      secureStorage: SecureStorageService(),
+      aiClient: OpenAICompatibleClient(),
+    );
+
+    final ModelCatalogController controller = ModelCatalogController(
+      aiClient: OpenAICompatibleClient(),
+      settingsController: settingsController,
+    );
+
+    controller.models = <AIModel>[];
+
+    expect(controller.findModelById('missing/model'), isNull);
+  });
 }

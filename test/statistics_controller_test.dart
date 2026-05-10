@@ -18,7 +18,7 @@ void main() {
           promptTokens: 10,
           completionTokens: 20,
           totalTokens: 30,
-          estimatedCost: 0,
+          estimatedCost: 0.000030,
           currencyCode: 'USD',
           responseTimeMs: 100,
         ),
@@ -32,9 +32,23 @@ void main() {
           promptTokens: 15,
           completionTokens: 25,
           totalTokens: 40,
-          estimatedCost: 0,
+          estimatedCost: 0.000040,
           currencyCode: 'USD',
           responseTimeMs: 120,
+        ),
+        UsageRecord(
+          id: 'u3',
+          conversationId: 'c2',
+          messageId: 'm3',
+          providerId: 'vsegpt',
+          modelId: 'model-b',
+          createdAt: DateTime.parse('2026-05-10T09:02:00Z'),
+          promptTokens: 5,
+          completionTokens: 5,
+          totalTokens: 10,
+          estimatedCost: 0.25,
+          currencyCode: 'RUB',
+          responseTimeMs: 80,
         ),
       ],
     );
@@ -45,9 +59,11 @@ void main() {
 
     await controller.load();
 
-    expect(controller.totalRequests, 2);
+    expect(controller.totalRequests, 3);
     expect(controller.requestCountByModel['model-a'], 2);
-    expect(controller.totalTokens, 70);
+    expect(controller.totalTokens, 80);
     expect(controller.totalTokensByModel['model-a'], 70);
+    expect(controller.totalEstimatedCostUsd, closeTo(0.000070, 1e-12));
+    expect(controller.totalEstimatedCostRub, closeTo(0.25, 1e-12));
   });
 }

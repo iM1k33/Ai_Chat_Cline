@@ -5,6 +5,7 @@ import 'package:aichatcline/data/services/secure_storage_service.dart';
 import 'package:aichatcline/data/services/settings_storage_service.dart';
 import 'package:aichatcline/features/chat/models/chat_message.dart';
 import 'package:aichatcline/features/chat/state/chat_controller.dart';
+import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,13 +13,21 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('lastUserMessage returns latest user message', () {
     final AppDatabase appDatabase = AppDatabase();
+    final SettingsController settingsController = SettingsController(
+      settingsStorage: const SettingsStorageService(),
+      secureStorage: SecureStorageService(),
+      aiClient: OpenAICompatibleClient(),
+    );
+    final ModelCatalogController modelCatalogController =
+        ModelCatalogController(
+          aiClient: OpenAICompatibleClient(),
+          settingsController: settingsController,
+        );
+
     final ChatController controller = ChatController(
       chatRepository: ChatRepository(appDatabase: appDatabase),
-      settingsController: SettingsController(
-        settingsStorage: const SettingsStorageService(),
-        secureStorage: SecureStorageService(),
-        aiClient: OpenAICompatibleClient(),
-      ),
+      settingsController: settingsController,
+      modelCatalogController: modelCatalogController,
       aiClient: OpenAICompatibleClient(),
       statsRepository: StatsRepository(appDatabase: appDatabase),
     );

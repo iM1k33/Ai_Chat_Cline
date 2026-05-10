@@ -3,9 +3,11 @@ import 'package:aichatcline/data/repositories/chat_repository.dart';
 import 'package:aichatcline/data/repositories/stats_repository.dart';
 import 'package:aichatcline/features/chat/models/chat_message.dart';
 import 'package:aichatcline/features/chat/models/conversation.dart';
+import 'package:aichatcline/features/providers/models/ai_model.dart';
 import 'package:aichatcline/features/providers/models/ai_provider.dart';
 import 'package:aichatcline/features/providers/models/chat_completion_request.dart';
 import 'package:aichatcline/features/providers/models/chat_completion_response.dart';
+import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
@@ -16,15 +18,18 @@ class ChatController extends ChangeNotifier {
   ChatController({
     required ChatRepository chatRepository,
     required SettingsController settingsController,
+    required ModelCatalogController modelCatalogController,
     required OpenAICompatibleClient aiClient,
     required StatsRepository statsRepository,
   }) : _chatRepository = chatRepository,
        _settingsController = settingsController,
+       _modelCatalogController = modelCatalogController,
        _aiClient = aiClient,
        _statsRepository = statsRepository;
 
   final ChatRepository _chatRepository;
   final SettingsController _settingsController;
+  final ModelCatalogController _modelCatalogController;
   final OpenAICompatibleClient _aiClient;
   final StatsRepository _statsRepository;
   final Uuid _uuid = const Uuid();
@@ -384,6 +389,11 @@ class ChatController extends ChangeNotifier {
       error: text,
     );
 
+    final String currencyCode = _resolveCurrencyCode(
+      modelId: modelId,
+      provider: provider,
+    );
+
     await _chatRepository.insertMessage(assistantMessage);
 
     if (provider != null && modelId != null && modelId.trim().isNotEmpty) {
@@ -399,7 +409,7 @@ class ChatController extends ChangeNotifier {
           completionTokens: 0,
           totalTokens: 0,
           estimatedCost: 0,
-          currencyCode: provider.currencyCode,
+          currencyCode: currencyCode,
           responseTimeMs: responseTimeMs,
           error: text,
         ),
@@ -478,6 +488,15 @@ class ChatController extends ChangeNotifier {
       );
       stopwatch.stop();
 
+      final String usageModelId = response.model ?? selectedModelId;
+      final int promptTokens = response.promptTokens ?? 0;
+      final int completionTokens = response.completionTokens ?? 0;
+      final double estimatedCost = _calculateEstimatedCost(
+        modelId: usageModelId,
+        promptTokens: promptTokens,
+        completionTokens: completionTokens,
+      );
+
       final ChatMessage assistantMessage = ChatMessage(
         id: _uuid.v4(),
         conversationId: conversation.id,
@@ -489,11 +508,16 @@ class ChatController extends ChangeNotifier {
         promptTokens: response.promptTokens,
         completionTokens: response.completionTokens,
         totalTokens: response.totalTokens,
-        estimatedCost: 0,
+        estimatedCost: estimatedCost,
         error: null,
       );
 
       await _chatRepository.insertMessage(assistantMessage);
+
+      final String currencyCode = _resolveCurrencyCode(
+        modelId: usageModelId,
+        provider: provider,
+      );
 
       await _statsRepository.insertUsageRecord(
         UsageRecord(
@@ -506,8 +530,8 @@ class ChatController extends ChangeNotifier {
           promptTokens: response.promptTokens ?? 0,
           completionTokens: response.completionTokens ?? 0,
           totalTokens: response.totalTokens ?? 0,
-          estimatedCost: 0,
-          currencyCode: provider.currencyCode,
+          estimatedCost: estimatedCost,
+          currencyCode: currencyCode,
           responseTimeMs: stopwatch.elapsedMilliseconds,
           error: null,
         ),
@@ -566,6 +590,40 @@ class ChatController extends ChangeNotifier {
       'vsegpt' => AIProvider.vsegpt,
       _ => null,
     };
+  }
+
+  double _calculateEstimatedCost({
+    required String modelId,
+    required int promptTokens,
+    required int completionTokens,
+  }) {
+    final AIModel? model = _modelCatalogController.findModelById(modelId);
+    final double? promptPrice = model?.promptPrice;
+    final double? completionPrice = model?.completionPrice;
+
+    if (promptPrice == null || completionPrice == null) {
+      return 0;
+    }
+
+    return (promptTokens * promptPrice) + (completionTokens * completionPrice);
+  }
+
+  String _resolveCurrencyCode({
+    required String? modelId,
+    required AIProvider? provider,
+  }) {
+    final String? normalizedModelId = modelId?.trim();
+    if (normalizedModelId != null && normalizedModelId.isNotEmpty) {
+      final AIModel? model = _modelCatalogController.findModelById(
+        normalizedModelId,
+      );
+      final String? modelCurrency = model?.currencyCode?.trim();
+      if (modelCurrency != null && modelCurrency.isNotEmpty) {
+        return modelCurrency;
+      }
+    }
+
+    return provider?.currencyCode ?? 'USD';
   }
 
   List<ChatCompletionMessage> _buildRequestMessages(
