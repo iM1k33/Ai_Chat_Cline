@@ -528,15 +528,32 @@ class ChatController extends ChangeNotifier {
       stream: shouldStream,
     );
 
+    final String? lastUserMessageSnippet = _lastUserMessageSnippet(
+      completionMessages,
+    );
+    final String? systemPromptSnippet = _systemPromptSnippet(completionMessages);
+
+    final Map<String, dynamic> requestStartMetadata = <String, dynamic>{
+      'providerId': provider.id,
+      'modelId': selectedModelId,
+      'streaming': shouldStream,
+      'messagesCount': completionMessages.length,
+    };
+    _addSnippetIfPresent(
+      requestStartMetadata,
+      'lastUserMessageSnippet',
+      lastUserMessageSnippet,
+    );
+    _addSnippetIfPresent(
+      requestStartMetadata,
+      'systemPromptSnippet',
+      systemPromptSnippet,
+    );
+
     await _appLogger?.logInfo(
       category: 'api',
       message: 'Chat request started',
-      metadata: <String, dynamic>{
-        'providerId': provider.id,
-        'modelId': selectedModelId,
-        'streaming': shouldStream,
-        'messagesCount': completionMessages.length,
-      },
+      metadata: requestStartMetadata,
     );
 
     if (shouldStream) {
@@ -628,6 +645,10 @@ class ChatController extends ChangeNotifier {
           'completionTokens': response.completionTokens ?? 0,
           'totalTokens': response.totalTokens ?? 0,
           'responseTimeMs': stopwatch.elapsedMilliseconds,
+          'estimatedCost': estimatedCost,
+          'currencyCode': currencyCode,
+          if (_snippetEnabled)
+            'assistantResponseSnippet': _snippetOrNull(response.content),
         },
       );
     } catch (e) {
@@ -655,6 +676,8 @@ class ChatController extends ChangeNotifier {
           'error': safeError,
           'errorType': e.runtimeType.toString(),
           'responseTimeMs': stopwatch.elapsedMilliseconds,
+          if (_snippetEnabled)
+            'lastUserMessageSnippet': _lastUserMessageSnippet(completionMessages),
         },
       );
     } finally {
@@ -796,6 +819,7 @@ class ChatController extends ChangeNotifier {
         );
 
         if (normalizedError == null) {
+          final String? assistantSnippet = _snippetOrNull(finalContent);
           await _appLogger?.logInfo(
             category: 'api',
             message: 'Chat request succeeded',
@@ -807,6 +831,9 @@ class ChatController extends ChangeNotifier {
               'completionTokens': hasUsage ? finalCompletionTokens : 0,
               'totalTokens': hasUsage ? finalTotalTokens : 0,
               'responseTimeMs': responseTimeMs,
+              'estimatedCost': hasUsage ? estimatedCost : 0,
+              'currencyCode': currencyCode,
+              if (_snippetEnabled) 'assistantResponseSnippet': assistantSnippet,
             },
           );
         } else {
@@ -819,6 +846,8 @@ class ChatController extends ChangeNotifier {
               'streaming': true,
               'error': normalizedError,
               'responseTimeMs': responseTimeMs,
+              if (_snippetEnabled)
+                'lastUserMessageSnippet': _lastUserMessageSnippet(request.messages),
             },
           );
         }
@@ -1029,5 +1058,73 @@ class ChatController extends ChangeNotifier {
     }
 
     return '${content.substring(0, 40)}...';
+  }
+
+  bool get _snippetEnabled {
+    return _appLogger?.includeMessageContentInLogs ??
+        _settingsController.settings.includeMessageContentInLogs;
+  }
+
+  String? _snippetOrNull(String value) {
+    if (!_snippetEnabled) {
+      return null;
+    }
+
+    return _appLogger?.buildMessageContentSnippet(value) ?? _shortSnippet(value);
+  }
+
+  String _shortSnippet(String value) {
+    final String compact = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.length <= 300) {
+      return compact;
+    }
+
+    return '${compact.substring(0, 300)}...';
+  }
+
+  String? _lastUserMessageSnippet(List<ChatCompletionMessage> requestMessages) {
+    if (!_snippetEnabled) {
+      return null;
+    }
+
+    for (int i = requestMessages.length - 1; i >= 0; i--) {
+      final ChatCompletionMessage message = requestMessages[i];
+      if (message.role == 'user') {
+        return _snippetOrNull(message.content);
+      }
+    }
+
+    return null;
+  }
+
+  String? _systemPromptSnippet(List<ChatCompletionMessage> requestMessages) {
+    if (!_snippetEnabled) {
+      return null;
+    }
+
+    for (final ChatCompletionMessage message in requestMessages) {
+      if (message.role == 'system' && message.content.trim().isNotEmpty) {
+        return _snippetOrNull(message.content);
+      }
+    }
+
+    return null;
+  }
+
+  void _addSnippetIfPresent(
+    Map<String, dynamic> metadata,
+    String key,
+    String? snippet,
+  ) {
+    if (!_snippetEnabled) {
+      return;
+    }
+
+    final String? value = snippet?.trim();
+    if (value == null || value.isEmpty) {
+      return;
+    }
+
+    metadata[key] = value;
   }
 }

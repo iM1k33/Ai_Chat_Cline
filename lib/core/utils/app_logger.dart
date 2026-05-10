@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:aichatcline/data/repositories/logs_repository.dart';
 import 'package:aichatcline/features/logs/models/app_log_entry.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
@@ -13,6 +15,40 @@ class AppLogger {
        _uuid = uuid ?? const Uuid();
 
   static const int _maxSnippetLength = 300;
+  static final Object _omitField = Object();
+
+  static const Set<String> _safeTechnicalFields = <String>{
+    'providerid',
+    'modelid',
+    'streaming',
+    'messagescount',
+    'prompttokens',
+    'completiontokens',
+    'totaltokens',
+    'responsetimems',
+    'estimatedcost',
+    'currencycode',
+    'conversationid',
+    'messageid',
+    'statuscode',
+    'errorcode',
+  };
+
+  static const Set<String> _messageContentFields = <String>{
+    'content',
+    'messagecontent',
+    'usermessage',
+    'assistantmessage',
+    'systemprompt',
+    'requestmessages',
+    'responsetext',
+    'prompt',
+    'completion',
+    'lastusermessagesnippet',
+    'assistantresponsesnippet',
+    'systempromptsnippet',
+    'lastrequestmessagesnippet',
+  };
 
   final LogsRepository _logsRepository;
   final Uuid _uuid;
@@ -69,6 +105,8 @@ class AppLogger {
     return _shortSnippet(content);
   }
 
+  bool get includeMessageContentInLogs => _includeMessageContentInLogs;
+
   Future<void> _log({
     required String level,
     required String category,
@@ -103,38 +141,88 @@ class AppLogger {
 
     final Map<String, dynamic> sanitized = <String, dynamic>{};
     metadata.forEach((String key, dynamic value) {
-      sanitized[key] = _sanitizeValue(key: key, value: value);
+      final dynamic sanitizedValue = _sanitizeValue(
+        keyPath: key,
+        leafKey: key,
+        value: value,
+      );
+      if (!identical(sanitizedValue, _omitField)) {
+        sanitized[key] = sanitizedValue;
+      }
     });
 
     return sanitized.isEmpty ? null : sanitized;
   }
 
-  dynamic _sanitizeValue({required String key, required dynamic value}) {
-    if (_isSensitiveKey(key)) {
+  dynamic _sanitizeValue({
+    required String keyPath,
+    required String leafKey,
+    required dynamic value,
+  }) {
+    final String normalizedLeaf = _normalizeComparableKey(leafKey);
+
+    if (_isSensitiveKey(keyPath: keyPath, leafKey: leafKey)) {
       return '[REDACTED]';
     }
 
-    if (_isContentKey(key) && !_includeMessageContentInLogs) {
-      return '[OMITTED]';
+    if (_messageContentFields.contains(normalizedLeaf) &&
+        !_includeMessageContentInLogs) {
+      return _omitField;
     }
 
     if (value is Map<String, dynamic>) {
       final Map<String, dynamic> nested = <String, dynamic>{};
       value.forEach((String nestedKey, dynamic nestedValue) {
-        nested[nestedKey] =
-            _sanitizeValue(key: nestedKey, value: nestedValue);
+        final String nestedPath = '$keyPath.$nestedKey';
+        final dynamic sanitizedNestedValue = _sanitizeValue(
+          keyPath: nestedPath,
+          leafKey: nestedKey,
+          value: nestedValue,
+        );
+        if (!identical(sanitizedNestedValue, _omitField)) {
+          nested[nestedKey] = sanitizedNestedValue;
+        }
       });
-      return nested;
+      return nested.isEmpty ? _omitField : nested;
     }
 
     if (value is List<dynamic>) {
-      return value
-          .map((dynamic item) => _sanitizeValue(key: key, value: item))
+      final List<dynamic> sanitizedItems = value
+          .map(
+            (dynamic item) => _sanitizeValue(
+              keyPath: keyPath,
+              leafKey: leafKey,
+              value: item,
+            ),
+          )
+          .where((dynamic item) => !identical(item, _omitField))
           .toList();
+
+      if (sanitizedItems.isEmpty) {
+        return _omitField;
+      }
+
+      if (_messageContentFields.contains(normalizedLeaf)) {
+        return _shortSnippet(jsonEncode(sanitizedItems));
+      }
+
+      return sanitizedItems;
     }
 
     if (value is String) {
+      if (_messageContentFields.contains(normalizedLeaf)) {
+        return _shortSnippet(value);
+      }
+
+      if (_looksLikeBearerValue(value)) {
+        return '[REDACTED]';
+      }
+
       return _shortSnippet(value);
+    }
+
+    if (_safeTechnicalFields.contains(normalizedLeaf)) {
+      return value;
     }
 
     return value;
@@ -144,29 +232,46 @@ class AppLogger {
     return _settingsController?.settings.includeMessageContentInLogs ?? false;
   }
 
-  bool _isSensitiveKey(String key) {
-    final String normalized = key.toLowerCase();
-    return normalized.contains('api_key') ||
-        normalized.contains('apikey') ||
-        normalized.contains('authorization') ||
-        normalized == 'auth' ||
-        normalized.contains('token') ||
-        normalized.contains('bearer');
+  bool _isSensitiveKey({required String keyPath, required String leafKey}) {
+    final String normalizedLeaf = _normalizeComparableKey(leafKey);
+    final String normalizedPath = _normalizeComparableKey(keyPath);
+
+    if (_safeTechnicalFields.contains(normalizedLeaf)) {
+      return false;
+    }
+
+    if (normalizedLeaf == 'apikey' ||
+        normalizedLeaf == 'authorization' ||
+        normalizedLeaf == 'auth' ||
+        normalizedLeaf == 'bearertoken') {
+      return true;
+    }
+
+    if (normalizedLeaf == 'token' || normalizedLeaf.endsWith('token')) {
+      return true;
+    }
+
+    if (normalizedPath.endsWith('headersauthorization')) {
+      return true;
+    }
+
+    return false;
   }
 
-  bool _isContentKey(String key) {
-    final String normalized = key.toLowerCase();
-    return normalized.contains('content') ||
-        normalized.contains('prompt') ||
-        normalized.contains('response');
+  bool _looksLikeBearerValue(String value) {
+    return value.trimLeft().toLowerCase().startsWith('bearer ');
+  }
+
+  String _normalizeComparableKey(String key) {
+    return key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
   }
 
   String _shortSnippet(String value) {
-    final String trimmed = value.trim();
-    if (trimmed.length <= _maxSnippetLength) {
-      return trimmed;
+    final String compact = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.length <= _maxSnippetLength) {
+      return compact;
     }
 
-    return '${trimmed.substring(0, _maxSnippetLength)}...';
+    return '${compact.substring(0, _maxSnippetLength)}...';
   }
 }

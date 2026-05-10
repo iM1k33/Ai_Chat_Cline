@@ -30,7 +30,7 @@ class _FakeLogsRepository extends LogsRepository {
 }
 
 void main() {
-  test('logger redacts sensitive fields and omits content by default', () async {
+  test('logger redacts sensitive fields and removes content fields by default', () async {
     final _FakeLogsRepository repo = _FakeLogsRepository();
     final AppLogger logger = AppLogger(logsRepository: repo);
 
@@ -40,7 +40,14 @@ void main() {
       metadata: <String, dynamic>{
         'apiKey': 'sk-secret',
         'authorization': 'Bearer secret',
+        'headers': <String, dynamic>{
+          'Authorization': 'Bearer nested-secret',
+        },
         'content': 'this should not be persisted in logs by default',
+        'promptTokens': 123,
+        'completionTokens': 456,
+        'totalTokens': 579,
+        'responseTimeMs': 999,
         'nested': <String, dynamic>{
           'token': 'nested-secret',
         },
@@ -53,7 +60,12 @@ void main() {
 
     expect(metadata['apiKey'], '[REDACTED]');
     expect(metadata['authorization'], '[REDACTED]');
-    expect(metadata['content'], '[OMITTED]');
+    expect(metadata.containsKey('content'), isFalse);
+    expect((metadata['headers'] as Map<String, dynamic>)['Authorization'], '[REDACTED]');
+    expect(metadata['promptTokens'], 123);
+    expect(metadata['completionTokens'], 456);
+    expect(metadata['totalTokens'], 579);
+    expect(metadata['responseTimeMs'], 999);
     expect((metadata['nested'] as Map<String, dynamic>)['token'], '[REDACTED]');
   });
 
@@ -84,8 +96,49 @@ void main() {
     final AppLogEntry entry = repo.inserted.single;
     final String snippet = entry.metadata!['content'] as String;
 
-    expect(snippet, isNot('[OMITTED]'));
+    expect(snippet, isNotEmpty);
     expect(snippet.length, lessThanOrEqualTo(303));
     expect(snippet.startsWith('x'), isTrue);
+  });
+
+  test('logger keeps explicit snippet fields only when enabled', () async {
+    final _FakeLogsRepository repo = _FakeLogsRepository();
+    final AppLogger logger = AppLogger(logsRepository: repo);
+
+    await logger.logInfo(
+      category: 'api',
+      message: 'Chat request started',
+      metadata: <String, dynamic>{
+        'lastUserMessageSnippet': 'hello user',
+        'providerId': 'openrouter',
+      },
+    );
+
+    final AppLogEntry first = repo.inserted.single;
+    expect(first.metadata!.containsKey('lastUserMessageSnippet'), isFalse);
+    expect(first.metadata!['providerId'], 'openrouter');
+
+    final SettingsController settingsController = SettingsController(
+      settingsStorage: const SettingsStorageService(),
+      secureStorage: SecureStorageService(),
+      aiClient: OpenAICompatibleClient(),
+    );
+    settingsController.settings = settingsController.settings.copyWith(
+      includeMessageContentInLogs: true,
+    );
+    logger.attachSettingsController(settingsController);
+
+    await logger.logInfo(
+      category: 'api',
+      message: 'Chat request started',
+      metadata: <String, dynamic>{
+        'lastUserMessageSnippet': 'hello user',
+        'providerId': 'openrouter',
+      },
+    );
+
+    final AppLogEntry second = repo.inserted.last;
+    expect(second.metadata!['lastUserMessageSnippet'], 'hello user');
+    expect(second.metadata!['providerId'], 'openrouter');
   });
 }
