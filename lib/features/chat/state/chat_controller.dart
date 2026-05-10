@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:aichatcline/core/errors/app_exception.dart';
 import 'package:aichatcline/data/repositories/chat_repository.dart';
 import 'package:aichatcline/data/repositories/stats_repository.dart';
@@ -39,7 +41,13 @@ class ChatController extends ChangeNotifier {
   List<ChatMessage> messages = <ChatMessage>[];
   bool isLoading = false;
   bool isSending = false;
+  bool isStreaming = false;
+  String? streamingMessageId;
   String? error;
+
+  StreamSubscription<ChatCompletionStreamChunk>? _activeStreamSubscription;
+  Future<void> Function()? _activeStreamFinalize;
+  bool _stopStreamingRequested = false;
 
   ChatMessage? get lastUserMessage {
     for (int i = messages.length - 1; i >= 0; i--) {
@@ -178,6 +186,24 @@ class ChatController extends ChangeNotifier {
     }
   }
 
+  Future<void> stopGeneration() async {
+    if (!isStreaming) {
+      return;
+    }
+
+    _stopStreamingRequested = true;
+
+    final StreamSubscription<ChatCompletionStreamChunk>? subscription =
+        _activeStreamSubscription;
+    _activeStreamSubscription = null;
+    await subscription?.cancel();
+
+    final Future<void> Function()? finalize = _activeStreamFinalize;
+    if (finalize != null) {
+      await finalize();
+    }
+  }
+
   Future<void> regenerateLastAssistantResponse() async {
     if (isSending) {
       return;
@@ -242,6 +268,7 @@ class ChatController extends ChangeNotifier {
       await _sendAssistantCompletion(
         conversation: conversation,
         completionMessages: _buildRequestMessages(historyUpToUser),
+        forceNonStreaming: true,
       );
 
       await _reloadConversations();
@@ -307,6 +334,7 @@ class ChatController extends ChangeNotifier {
       await _sendAssistantCompletion(
         conversation: conversation,
         completionMessages: _buildRequestMessages(refreshed),
+        forceNonStreaming: true,
       );
 
       await _reloadConversations();
@@ -424,6 +452,7 @@ class ChatController extends ChangeNotifier {
   Future<void> _sendAssistantCompletion({
     required Conversation conversation,
     required List<ChatCompletionMessage> completionMessages,
+    bool forceNonStreaming = false,
   }) async {
     final String apiKey = _settingsController.apiKey.trim();
     final String? selectedModelId = _resolveModelIdForCurrentConversation(
@@ -461,6 +490,10 @@ class ChatController extends ChangeNotifier {
       return;
     }
 
+    final bool shouldStream =
+        _settingsController.settings.modelParameters.streamingEnabled &&
+        !forceNonStreaming;
+
     final ChatCompletionRequest request = ChatCompletionRequest(
       model: selectedModelId,
       messages: completionMessages,
@@ -471,8 +504,19 @@ class ChatController extends ChangeNotifier {
           _settingsController.settings.modelParameters.frequencyPenalty,
       presencePenalty:
           _settingsController.settings.modelParameters.presencePenalty,
-      stream: false,
+      stream: shouldStream,
     );
+
+    if (shouldStream) {
+      await _sendAssistantCompletionStreaming(
+        conversation: conversation,
+        provider: provider,
+        apiKey: apiKey,
+        selectedModelId: selectedModelId,
+        request: request,
+      );
+      return;
+    }
 
     isSending = true;
     error = null;
@@ -556,7 +600,234 @@ class ChatController extends ChangeNotifier {
       );
     } finally {
       isSending = false;
+      isStreaming = false;
+      streamingMessageId = null;
+      _stopStreamingRequested = false;
     }
+  }
+
+  Future<void> _sendAssistantCompletionStreaming({
+    required Conversation conversation,
+    required AIProvider provider,
+    required String apiKey,
+    required String selectedModelId,
+    required ChatCompletionRequest request,
+  }) async {
+    final Stopwatch stopwatch = Stopwatch()..start();
+
+    ChatMessage assistantDraft = ChatMessage(
+      id: _uuid.v4(),
+      conversationId: conversation.id,
+      role: ChatMessageRole.assistant,
+      content: '',
+      createdAt: DateTime.now(),
+      modelId: selectedModelId,
+      providerId: provider.id,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      estimatedCost: 0,
+      error: null,
+    );
+
+    messages = List<ChatMessage>.from(messages)..add(assistantDraft);
+
+    isSending = true;
+    isStreaming = true;
+    streamingMessageId = assistantDraft.id;
+    error = null;
+    _stopStreamingRequested = false;
+    notifyListeners();
+
+    String resolvedModelId = selectedModelId;
+    int? promptTokens;
+    int? completionTokens;
+    int? totalTokens;
+    bool finalized = false;
+    final Completer<void> doneCompleter = Completer<void>();
+
+    Future<void> finalize({String? errorText}) async {
+      if (finalized) {
+        return;
+      }
+      finalized = true;
+
+      _activeStreamFinalize = null;
+      final StreamSubscription<ChatCompletionStreamChunk>? subscription =
+          _activeStreamSubscription;
+      _activeStreamSubscription = null;
+      await subscription?.cancel();
+
+      if (stopwatch.isRunning) {
+        stopwatch.stop();
+      }
+
+      final int responseTimeMs = stopwatch.elapsedMilliseconds;
+      final bool hasUsage =
+          promptTokens != null ||
+          completionTokens != null ||
+          totalTokens != null;
+
+      final int finalPromptTokens = promptTokens ?? 0;
+      final int finalCompletionTokens = completionTokens ?? 0;
+      final int finalTotalTokens =
+          totalTokens ?? (finalPromptTokens + finalCompletionTokens);
+
+      final double estimatedCost = hasUsage
+          ? _calculateEstimatedCost(
+              modelId: resolvedModelId,
+              promptTokens: finalPromptTokens,
+              completionTokens: finalCompletionTokens,
+            )
+          : 0;
+
+      final String currencyCode = _resolveCurrencyCode(
+        modelId: resolvedModelId,
+        provider: provider,
+      );
+
+      final String? normalizedError =
+          (errorText == null || errorText.trim().isEmpty)
+          ? null
+          : errorText.trim();
+
+      String finalContent = assistantDraft.content;
+      if (normalizedError != null) {
+        finalContent = finalContent.trim().isEmpty
+            ? 'Error: $normalizedError'
+            : '$finalContent\n\nError: $normalizedError';
+      }
+
+      assistantDraft = assistantDraft.copyWith(
+        content: finalContent,
+        modelId: resolvedModelId,
+        providerId: provider.id,
+        promptTokens: hasUsage ? finalPromptTokens : 0,
+        completionTokens: hasUsage ? finalCompletionTokens : 0,
+        totalTokens: hasUsage ? finalTotalTokens : 0,
+        estimatedCost: hasUsage ? estimatedCost : 0,
+        error: normalizedError,
+      );
+
+      try {
+        _replaceMessageInMemory(assistantDraft);
+
+        await _chatRepository.insertMessage(assistantDraft);
+
+        await _statsRepository.insertUsageRecord(
+          UsageRecord(
+            id: _uuid.v4(),
+            conversationId: conversation.id,
+            messageId: assistantDraft.id,
+            providerId: provider.id,
+            modelId: resolvedModelId,
+            createdAt: DateTime.now(),
+            promptTokens: hasUsage ? finalPromptTokens : 0,
+            completionTokens: hasUsage ? finalCompletionTokens : 0,
+            totalTokens: hasUsage ? finalTotalTokens : 0,
+            estimatedCost: hasUsage ? estimatedCost : 0,
+            currencyCode: currencyCode,
+            responseTimeMs: responseTimeMs,
+            error: normalizedError,
+          ),
+        );
+
+        await _chatRepository.upsertConversation(
+          conversation.copyWith(updatedAt: DateTime.now()),
+        );
+      } catch (_) {
+        error = 'Failed to finalize streamed response';
+      } finally {
+        isStreaming = false;
+        streamingMessageId = null;
+        isSending = false;
+        _stopStreamingRequested = false;
+        notifyListeners();
+
+        if (!doneCompleter.isCompleted) {
+          doneCompleter.complete();
+        }
+      }
+    }
+
+    _activeStreamFinalize = () => finalize();
+
+    try {
+      final Stream<ChatCompletionStreamChunk> stream =
+          _aiClient.createChatCompletionStream(
+            provider: provider,
+            apiKey: apiKey,
+            request: request,
+          );
+
+      _activeStreamSubscription = stream.listen(
+        (ChatCompletionStreamChunk chunk) {
+          if (_stopStreamingRequested) {
+            unawaited(finalize());
+            return;
+          }
+
+          final String? chunkModel = chunk.model?.trim();
+          if (chunkModel != null && chunkModel.isNotEmpty) {
+            resolvedModelId = chunkModel;
+          }
+
+          if (chunk.promptTokens != null) {
+            promptTokens = chunk.promptTokens;
+          }
+          if (chunk.completionTokens != null) {
+            completionTokens = chunk.completionTokens;
+          }
+          if (chunk.totalTokens != null) {
+            totalTokens = chunk.totalTokens;
+          }
+
+          if (chunk.delta.isNotEmpty) {
+            assistantDraft = assistantDraft.copyWith(
+              content: '${assistantDraft.content}${chunk.delta}',
+              modelId: resolvedModelId,
+              providerId: provider.id,
+            );
+            _replaceMessageInMemory(assistantDraft);
+            notifyListeners();
+          }
+
+          if (chunk.isDone) {
+            unawaited(finalize());
+          }
+        },
+        onError: (Object e, StackTrace stackTrace) {
+          final String safeError = e is AppException
+              ? e.message
+              : 'Failed to get streamed response from provider';
+          unawaited(finalize(errorText: safeError));
+        },
+        onDone: () {
+          unawaited(finalize());
+        },
+        cancelOnError: false,
+      );
+    } catch (e) {
+      final String safeError = e is AppException
+          ? e.message
+          : 'Failed to create streamed request';
+      await finalize(errorText: safeError);
+    }
+
+    await doneCompleter.future;
+  }
+
+  void _replaceMessageInMemory(ChatMessage updatedMessage) {
+    final int index = messages.indexWhere(
+      (ChatMessage message) => message.id == updatedMessage.id,
+    );
+    if (index < 0) {
+      return;
+    }
+
+    final List<ChatMessage> updatedMessages = List<ChatMessage>.from(messages);
+    updatedMessages[index] = updatedMessage;
+    messages = updatedMessages;
   }
 
   String? _resolveModelIdForCurrentConversation(Conversation conversation) {

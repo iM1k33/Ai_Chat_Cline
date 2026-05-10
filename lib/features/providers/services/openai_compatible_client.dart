@@ -196,6 +196,123 @@ class OpenAICompatibleClient {
     }
   }
 
+  Stream<ChatCompletionStreamChunk> createChatCompletionStream({
+    required AIProvider provider,
+    required String apiKey,
+    required ChatCompletionRequest request,
+  }) {
+    final String trimmedKey = apiKey.trim();
+    if (trimmedKey.isEmpty) {
+      throw const AppException('API key is required');
+    }
+
+    final String baseUrl = provider.baseUrl.trim();
+    if (baseUrl.isEmpty) {
+      throw const AppException('Provider base URL is required');
+    }
+
+    final Uri uri = Uri.parse('$baseUrl/chat/completions');
+
+    final Map<String, String> headers = <String, String>{
+      'Authorization': 'Bearer $trimmedKey',
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+    };
+
+    if (provider.type == AIProviderType.openRouter) {
+      headers['HTTP-Referer'] = 'https://localhost';
+      headers['X-Title'] = 'AI Chat';
+    }
+
+    final Map<String, dynamic> requestBody = Map<String, dynamic>.from(
+      request.toJson(),
+    );
+    requestBody['stream'] = true;
+
+    final http.Request streamedRequest = http.Request('POST', uri)
+      ..headers.addAll(headers)
+      ..body = jsonEncode(requestBody);
+
+    final StreamController<ChatCompletionStreamChunk> controller =
+        StreamController<ChatCompletionStreamChunk>();
+
+    unawaited(
+      () async {
+        try {
+          final http.StreamedResponse response = await _httpClient
+              .send(streamedRequest)
+              .timeout(const Duration(seconds: 60));
+
+          if (response.statusCode < 200 || response.statusCode > 299) {
+            final String errorBody = await response.stream.bytesToString();
+            throw AppException(
+              'Chat completion stream request failed: HTTP ${response.statusCode}. ${_bodySnippet(errorBody)}',
+              code: 'http_${response.statusCode}',
+            );
+          }
+
+          final Stream<String> lines = response.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter());
+
+          final StringBuffer eventDataBuffer = StringBuffer();
+
+          await for (final String rawLine in lines) {
+            final String line = rawLine.trimRight();
+            if (line.isEmpty) {
+              _emitStreamChunkFromEventData(
+                eventDataBuffer.toString(),
+                controller,
+              );
+              eventDataBuffer.clear();
+              continue;
+            }
+
+            if (line.startsWith('data:')) {
+              eventDataBuffer.writeln(line.substring(5).trimLeft());
+            }
+          }
+
+          _emitStreamChunkFromEventData(eventDataBuffer.toString(), controller);
+
+          if (!controller.isClosed) {
+            await controller.close();
+          }
+        } on TimeoutException catch (e) {
+          if (!controller.isClosed) {
+            controller.addError(
+              AppException(
+                'Chat completion stream request timed out',
+                code: 'timeout',
+                cause: e,
+              ),
+            );
+            await controller.close();
+          }
+        } on AppException catch (e) {
+          if (!controller.isClosed) {
+            controller.addError(e);
+            await controller.close();
+          }
+        } catch (e) {
+          if (!controller.isClosed) {
+            controller.addError(
+              AppException(
+                'Failed to create chat completion stream request',
+                code: 'request_failed',
+                cause: e,
+              ),
+            );
+            await controller.close();
+          }
+        }
+      }(),
+    );
+
+    return controller.stream;
+  }
+
   Future<void> validateApiKey({
     required AIProvider provider,
     required String apiKey,
@@ -380,6 +497,67 @@ class OpenAICompatibleClient {
         cause: e,
       );
     }
+  }
+
+  void _emitStreamChunkFromEventData(
+    String rawEventData,
+    StreamController<ChatCompletionStreamChunk> controller,
+  ) {
+    final String eventData = rawEventData.trim();
+    if (eventData.isEmpty || controller.isClosed) {
+      return;
+    }
+
+    if (eventData == '[DONE]') {
+      controller.add(
+        const ChatCompletionStreamChunk(delta: '', isDone: true),
+      );
+      return;
+    }
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(eventData);
+    } on FormatException catch (e) {
+      throw AppException(
+        'Invalid stream chunk format',
+        code: 'invalid_response',
+        cause: e,
+      );
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      return;
+    }
+
+    String delta = '';
+    final Object? choices = decoded['choices'];
+    if (choices is List<dynamic> && choices.isNotEmpty) {
+      final Object? firstChoice = choices.first;
+      if (firstChoice is Map<String, dynamic>) {
+        final Object? deltaRaw = firstChoice['delta'];
+        if (deltaRaw is Map<String, dynamic>) {
+          final Object? content = deltaRaw['content'];
+          if (content is String) {
+            delta = content;
+          }
+        }
+      }
+    }
+
+    final Map<String, dynamic>? usage =
+        decoded['usage'] as Map<String, dynamic>?;
+
+    controller.add(
+      ChatCompletionStreamChunk(
+        delta: delta,
+        model: decoded['model'] as String?,
+        promptTokens: (usage?['prompt_tokens'] as num?)?.toInt(),
+        completionTokens: (usage?['completion_tokens'] as num?)?.toInt(),
+        totalTokens: (usage?['total_tokens'] as num?)?.toInt(),
+        isDone: false,
+      ),
+    );
   }
 
   String _bodySnippet(String body) {

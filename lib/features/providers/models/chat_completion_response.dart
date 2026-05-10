@@ -44,3 +44,21 @@ class ChatCompletionResponse {
     );
   }
 }
+
+class ChatCompletionStreamChunk {
+  const ChatCompletionStreamChunk({
+    required this.delta,
+    this.model,
+    this.promptTokens,
+    this.completionTokens,
+    this.totalTokens,
+    required this.isDone,
+  });
+
+  final String delta;
+  final String? model;
+  final int? promptTokens;
+  final int? completionTokens;
+  final int? totalTokens;
+  final bool isDone;
+}

@@ -369,10 +369,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   trailing: IconButton(
                     tooltip: 'New chat',
                     icon: const Icon(Icons.add_comment_outlined),
-                    onPressed: () async {
-                      Navigator.of(bottomSheetContext).pop();
-                      await widget.controller.createNewConversation();
-                    },
+                    onPressed: widget.controller.isStreaming
+                        ? null
+                        : () async {
+                            Navigator.of(bottomSheetContext).pop();
+                            await widget.controller.createNewConversation();
+                          },
                   ),
                 ),
                 Flexible(
@@ -415,17 +417,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         trailing: IconButton(
                           tooltip: 'Delete conversation',
                           icon: const Icon(Icons.delete_outline),
-                          onPressed: () async {
-                            final bool confirmed =
-                                await _showDeleteConversationConfirmation();
-                            if (!confirmed) {
-                              return;
-                            }
+                          onPressed: widget.controller.isStreaming
+                              ? null
+                              : () async {
+                                  final bool confirmed =
+                                      await _showDeleteConversationConfirmation();
+                                  if (!confirmed) {
+                                    return;
+                                  }
 
-                            await widget.controller.deleteConversation(
-                              conversation.id,
-                            );
-                          },
+                                  await widget.controller.deleteConversation(
+                                    conversation.id,
+                                  );
+                                },
                         ),
                       );
                     },
@@ -512,6 +516,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       _ActionBar(
                         controller: widget.controller,
+                        isStreaming: widget.controller.isStreaming,
                         showCompactNewChat: !isWide,
                         onEditLastMessage: _openEditLastMessageDialog,
                         onRegenerateLastResponse:
@@ -544,7 +549,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       _ChatInputBar(
                         controller: _messageController,
                         onSend: _send,
+                        onStop: widget.controller.stopGeneration,
                         isSending: widget.controller.isSending,
+                        isStreaming: widget.controller.isStreaming,
                       ),
                     ],
                   ),
@@ -561,6 +568,7 @@ class _ChatScreenState extends State<ChatScreen> {
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
     required this.controller,
+    required this.isStreaming,
     required this.showCompactNewChat,
     required this.onEditLastMessage,
     required this.onRegenerateLastResponse,
@@ -569,6 +577,7 @@ class _ActionBar extends StatelessWidget {
   });
 
   final ChatController controller;
+  final bool isStreaming;
   final bool showCompactNewChat;
   final Future<void> Function() onEditLastMessage;
   final Future<void> Function() onRegenerateLastResponse;
@@ -585,31 +594,36 @@ class _ActionBar extends StatelessWidget {
         children: [
           if (showCompactNewChat)
             FilledButton.tonalIcon(
-              onPressed: controller.createNewConversation,
+              onPressed: isStreaming ? null : controller.createNewConversation,
               icon: const Icon(Icons.add_comment_outlined),
               label: const Text('New chat'),
             ),
           FilledButton.tonalIcon(
-            onPressed: controller.isSending ? null : onRegenerateLastResponse,
+            onPressed: controller.isSending || isStreaming
+                ? null
+                : onRegenerateLastResponse,
             icon: const Icon(Icons.refresh),
             label: const Text('Regenerate'),
           ),
           FilledButton.tonalIcon(
-            onPressed: controller.isSending || controller.lastUserMessage == null
+            onPressed:
+                controller.isSending ||
+                    isStreaming ||
+                    controller.lastUserMessage == null
                 ? null
                 : onEditLastMessage,
             icon: const Icon(Icons.edit_outlined),
             label: const Text('Edit last'),
           ),
           FilledButton.tonalIcon(
-            onPressed: controller.currentConversation == null
+            onPressed: controller.currentConversation == null || isStreaming
                 ? null
                 : onDeleteCurrentConversation,
             icon: const Icon(Icons.delete_outline),
             label: const Text('Delete current'),
           ),
           OutlinedButton.icon(
-            onPressed: onDeleteAllConversations,
+            onPressed: isStreaming ? null : onDeleteAllConversations,
             icon: const Icon(Icons.delete_sweep_outlined),
             label: const Text('Delete all'),
           ),
@@ -668,7 +682,9 @@ class _ConversationSidebar extends StatelessWidget {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.tonalIcon(
-                onPressed: controller.createNewConversation,
+                onPressed: controller.isStreaming
+                    ? null
+                    : controller.createNewConversation,
                 icon: const Icon(Icons.add_comment_outlined),
                 label: const Text('New chat'),
               ),
@@ -697,7 +713,9 @@ class _ConversationSidebar extends StatelessWidget {
                   trailing: IconButton(
                     tooltip: 'Delete conversation',
                     icon: const Icon(Icons.delete_outline),
-                    onPressed: () => onDeleteConversation(conversation.id),
+                    onPressed: controller.isStreaming
+                        ? null
+                        : () => onDeleteConversation(conversation.id),
                   ),
                 );
               },
@@ -791,12 +809,16 @@ class _ChatInputBar extends StatelessWidget {
   const _ChatInputBar({
     required this.controller,
     required this.onSend,
+    required this.onStop,
     required this.isSending,
+    required this.isStreaming,
   });
 
   final TextEditingController controller;
   final Future<void> Function() onSend;
+  final Future<void> Function() onStop;
   final bool isSending;
+  final bool isStreaming;
 
   @override
   Widget build(BuildContext context) {
@@ -817,16 +839,22 @@ class _ChatInputBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton(
-            onPressed: isSending ? null : onSend,
-            child: isSending
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Send'),
-          ),
+          if (isStreaming)
+            FilledButton.tonal(
+              onPressed: onStop,
+              child: const Text('Stop'),
+            )
+          else
+            FilledButton(
+              onPressed: isSending ? null : onSend,
+              child: isSending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Send'),
+            ),
         ],
       ),
     );
