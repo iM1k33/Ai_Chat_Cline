@@ -1,12 +1,19 @@
+import 'package:aichatcline/features/providers/models/ai_model.dart';
 import 'package:aichatcline/features/providers/models/model_parameters.dart';
+import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/settings/state/app_settings.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:flutter/material.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.controller});
+  const SettingsScreen({
+    super.key,
+    required this.controller,
+    required this.modelCatalogController,
+  });
 
   final SettingsController controller;
+  final ModelCatalogController modelCatalogController;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -21,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _topPController;
   late final TextEditingController _frequencyPenaltyController;
   late final TextEditingController _presencePenaltyController;
+  late final TextEditingController _modelSearchController;
   late ThemeModeOption _selectedThemeMode;
   late LocaleOption _selectedLocale;
 
@@ -51,15 +59,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _presencePenaltyController = TextEditingController(
       text: controller.settings.modelParameters.presencePenalty.toString(),
     );
+    _modelSearchController = TextEditingController();
     _selectedThemeMode = controller.settings.themeMode;
     _selectedLocale = controller.settings.locale;
 
     controller.addListener(_syncControllersFromState);
+    widget.modelCatalogController.addListener(_syncControllersFromState);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_syncControllersFromState);
+    widget.modelCatalogController.removeListener(_syncControllersFromState);
     _apiKeyController.dispose();
     _modelIdController.dispose();
     _systemPromptController.dispose();
@@ -68,6 +79,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _topPController.dispose();
     _frequencyPenaltyController.dispose();
     _presencePenaltyController.dispose();
+    _modelSearchController.dispose();
     super.dispose();
   }
 
@@ -141,8 +153,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final SettingsController controller = widget.controller;
+    final ModelCatalogController modelCatalogController =
+        widget.modelCatalogController;
     final AppSettings settings = controller.settings;
     final ModelParameters params = settings.modelParameters;
+    final List<AIModel> filteredModels = modelCatalogController.search(
+      _modelSearchController.text,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -208,14 +225,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Detected provider: ${controller.detectedProvider?.name ?? 'Not detected'}',
             ),
             const SizedBox(height: 16),
+            Row(
+              children: [
+                FilledButton.tonal(
+                  onPressed: modelCatalogController.isLoading
+                      ? null
+                      : () async {
+                          await modelCatalogController.loadModels();
+                        },
+                  child: modelCatalogController.isLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Load models'),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    modelCatalogController.lastLoadedAt == null
+                        ? 'Models not loaded yet'
+                        : 'Loaded: ${modelCatalogController.models.length}',
+                  ),
+                ),
+              ],
+            ),
+            if (modelCatalogController.error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  modelCatalogController.error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _modelSearchController,
+              decoration: const InputDecoration(
+                labelText: 'Search models',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) {
+                setState(() {});
+              },
+            ),
+            const SizedBox(height: 8),
+            if (filteredModels.isNotEmpty)
+              SizedBox(
+                height: 180,
+                child: ListView.builder(
+                  itemCount: filteredModels.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final AIModel model = filteredModels[index];
+                    final bool isSelected =
+                        settings.selectedModelId?.trim() == model.id;
+                    final String subtitle = <String>[
+                      if (model.contextLength != null)
+                        'ctx ${model.contextLength}',
+                      if (model.promptPrice != null)
+                        'prompt ${model.promptPrice}',
+                      if (model.completionPrice != null)
+                        'completion ${model.completionPrice}',
+                      if (model.currencyCode != null)
+                        model.currencyCode!,
+                    ].join(' • ');
+
+                    return ListTile(
+                      dense: true,
+                      selected: isSelected,
+                      title: Text(model.name),
+                      subtitle: Text(
+                        subtitle.isEmpty ? model.id : '${model.id} • $subtitle',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: isSelected ? const Icon(Icons.check) : null,
+                      onTap: () async {
+                        await modelCatalogController.selectModel(model);
+                      },
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 12),
             TextField(
               controller: _modelIdController,
               decoration: const InputDecoration(
-                labelText: 'Model ID',
+                labelText: 'Model ID (manual fallback)',
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (value) async {
-                await controller.updateSelectedModelId(value);
+                await modelCatalogController.selectModelById(value);
               },
             ),
             const SizedBox(height: 8),
@@ -223,9 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               alignment: Alignment.centerLeft,
               child: FilledButton.tonal(
                 onPressed: () async {
-                  await controller.updateSelectedModelId(
-                    _modelIdController.text,
-                  );
+                  await modelCatalogController.selectModelById(_modelIdController.text);
                 },
                 child: const Text('Save model ID'),
               ),

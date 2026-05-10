@@ -3,6 +3,7 @@ import 'package:aichatcline/features/chat/models/conversation.dart';
 import 'package:aichatcline/features/chat/state/chat_controller.dart';
 import 'package:aichatcline/features/export/services/export_service.dart';
 import 'package:aichatcline/features/export/services/share_service.dart';
+import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,7 @@ class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.controller,
+    required this.modelCatalogController,
     required this.exportService,
     required this.shareService,
     required this.providerName,
@@ -21,6 +23,7 @@ class ChatScreen extends StatefulWidget {
   });
 
   final ChatController controller;
+  final ModelCatalogController modelCatalogController;
   final ExportService exportService;
   final ShareService shareService;
   final String providerName;
@@ -185,12 +188,20 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _messageController = TextEditingController();
+    widget.modelCatalogController.addListener(_onCatalogChanged);
   }
 
   @override
   void dispose() {
+    widget.modelCatalogController.removeListener(_onCatalogChanged);
     _messageController.dispose();
     super.dispose();
+  }
+
+  void _onCatalogChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _send() async {
@@ -434,10 +445,20 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: widget.controller,
       builder: (context, _) {
         final bool isWide = MediaQuery.of(context).size.width >= 800;
-        final String modelStatusText =
-            (widget.selectedModelId == null || widget.selectedModelId!.isEmpty)
-            ? 'No model selected'
-            : widget.selectedModelId!;
+        final String modelStatusText = () {
+          final String? selectedName =
+              widget.modelCatalogController.selectedModel?.name;
+          if (selectedName != null && selectedName.trim().isNotEmpty) {
+            return selectedName;
+          }
+
+          if (widget.selectedModelId != null &&
+              widget.selectedModelId!.trim().isNotEmpty) {
+            return widget.selectedModelId!;
+          }
+
+          return 'No model selected';
+        }();
 
         return Scaffold(
           appBar: AppBar(

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:aichatcline/core/errors/app_exception.dart';
+import 'package:aichatcline/features/providers/models/ai_model.dart';
 import 'package:aichatcline/features/providers/models/ai_provider.dart';
 import 'package:aichatcline/features/providers/models/chat_completion_request.dart';
 import 'package:aichatcline/features/providers/models/chat_completion_response.dart';
@@ -13,6 +14,123 @@ class OpenAICompatibleClient {
     : _httpClient = httpClient ?? http.Client();
 
   final http.Client _httpClient;
+
+  Future<List<AIModel>> fetchModels({
+    required AIProvider provider,
+    required String apiKey,
+  }) async {
+    final String trimmedKey = apiKey.trim();
+    if (trimmedKey.isEmpty) {
+      throw const AppException('API key is required');
+    }
+
+    final String baseUrl = provider.baseUrl.trim();
+    if (baseUrl.isEmpty) {
+      throw const AppException('Provider base URL is required');
+    }
+
+    final Uri uri = Uri.parse('$baseUrl/models');
+    final Map<String, String> headers = <String, String>{
+      'Authorization': 'Bearer $trimmedKey',
+      'Accept': 'application/json',
+    };
+
+    if (provider.type == AIProviderType.openRouter) {
+      headers['HTTP-Referer'] = 'https://localhost';
+      headers['X-Title'] = 'AI Chat';
+    }
+
+    try {
+      final http.Response response = await _httpClient
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode < 200 || response.statusCode > 299) {
+        throw AppException(
+          'Failed to load models: HTTP ${response.statusCode}. ${_bodySnippet(response.body)}',
+          code: 'http_${response.statusCode}',
+        );
+      }
+
+      final Object? decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw const AppException('Invalid models response format');
+      }
+
+      final Object? data = decoded['data'];
+      if (data is! List<dynamic>) {
+        throw const AppException('Models response does not contain a valid data list');
+      }
+
+      final List<AIModel> models = <AIModel>[];
+      for (final Object? item in data) {
+        if (item is! Map<String, dynamic>) {
+          continue;
+        }
+
+        final String id = (item['id'] as String?)?.trim() ?? '';
+        if (id.isEmpty) {
+          continue;
+        }
+
+        final String name = ((item['name'] as String?)?.trim().isNotEmpty ?? false)
+            ? (item['name'] as String).trim()
+            : id;
+
+        final Object? topProviderRaw = item['top_provider'];
+        final Map<String, dynamic>? topProvider =
+            topProviderRaw is Map<String, dynamic> ? topProviderRaw : null;
+
+        final Object? pricingRaw = item['pricing'];
+        final Map<String, dynamic>? pricing =
+            pricingRaw is Map<String, dynamic> ? pricingRaw : null;
+
+        final Object? contextLengthRaw = item['context_length'] ??
+            topProvider?['context_length'];
+
+        final Object? supportsStreamingRaw =
+            item['supports_streaming'] ?? item['streaming'];
+
+        models.add(
+          AIModel(
+            id: id,
+            name: name,
+            providerId: provider.id,
+            description: item['description'] as String?,
+            contextLength: _parseInt(contextLengthRaw),
+            promptPrice: _parseDouble(pricing?['prompt']),
+            completionPrice: _parseDouble(pricing?['completion']),
+            currencyCode: provider.type == AIProviderType.vsegpt ? 'RUB' : 'USD',
+            supportsStreaming: supportsStreamingRaw is bool
+                ? supportsStreamingRaw
+                : true,
+          ),
+        );
+      }
+
+      return models;
+    } on TimeoutException catch (e) {
+      throw AppException(
+        'Models request timed out',
+        code: 'timeout',
+        cause: e,
+      );
+    } on FormatException catch (e) {
+      throw AppException(
+        'Invalid models response format',
+        code: 'invalid_response',
+        cause: e,
+      );
+    } on AppException {
+      rethrow;
+    } catch (e) {
+      throw AppException(
+        'Failed to load models',
+        code: 'request_failed',
+        cause: e,
+      );
+    }
+  }
 
   Future<ChatCompletionResponse> createChatCompletion({
     required AIProvider provider,
@@ -370,5 +488,31 @@ class OpenAICompatibleClient {
     }
 
     return '${trimmed.substring(0, 200)}...';
+  }
+
+  int? _parseInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value.trim());
+    }
+    return null;
+  }
+
+  double? _parseDouble(Object? value) {
+    if (value is double) {
+      return value;
+    }
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value.trim());
+    }
+    return null;
   }
 }

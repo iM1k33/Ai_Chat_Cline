@@ -232,4 +232,88 @@ void main() {
       ),
     );
   });
+
+  test('fetchModels parses OpenRouter-like response with pricing/context', () async {
+    late Uri requestedUri;
+    late Map<String, String> requestedHeaders;
+
+    final OpenAICompatibleClient client = OpenAICompatibleClient(
+      httpClient: _FakeHttpClient((http.BaseRequest request) async {
+        requestedUri = request.url;
+        requestedHeaders = request.headers;
+        return _response(
+          statusCode: 200,
+          body: jsonEncode(<String, dynamic>{
+            'data': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'openrouter/alpha',
+                'name': 'Alpha',
+                'description': 'Fast model',
+                'context_length': 131072,
+                'pricing': <String, dynamic>{
+                  'prompt': '0.0000015',
+                  'completion': 0.0000025,
+                },
+              },
+            ],
+          }),
+        );
+      }),
+    );
+
+    final List models = await client.fetchModels(
+      provider: AIProvider.openRouter,
+      apiKey: 'sk-or-v1-valid',
+    );
+
+    expect(requestedUri.toString(), 'https://openrouter.ai/api/v1/models');
+    expect(requestedHeaders['Authorization'], 'Bearer sk-or-v1-valid');
+    expect(requestedHeaders['Accept'], 'application/json');
+    expect(requestedHeaders['HTTP-Referer'], 'https://localhost');
+    expect(requestedHeaders['X-Title'], 'AI Chat');
+
+    expect(models.length, 1);
+    final dynamic model = models.first;
+    expect(model.id, 'openrouter/alpha');
+    expect(model.name, 'Alpha');
+    expect(model.providerId, 'openrouter');
+    expect(model.description, 'Fast model');
+    expect(model.contextLength, 131072);
+    expect(model.promptPrice, 0.0000015);
+    expect(model.completionPrice, 0.0000025);
+    expect(model.currencyCode, 'USD');
+    expect(model.supportsStreaming, isTrue);
+  });
+
+  test('fetchModels handles missing optional fields', () async {
+    final OpenAICompatibleClient client = OpenAICompatibleClient(
+      httpClient: _FakeHttpClient((http.BaseRequest request) async {
+        return _response(
+          statusCode: 200,
+          body: jsonEncode(<String, dynamic>{
+            'data': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'vsegpt/basic',
+                'top_provider': <String, dynamic>{'context_length': 8192},
+              },
+            ],
+          }),
+        );
+      }),
+    );
+
+    final List models = await client.fetchModels(
+      provider: AIProvider.vsegpt,
+      apiKey: 'sk-or-vv-valid',
+    );
+
+    expect(models.length, 1);
+    final dynamic model = models.first;
+    expect(model.id, 'vsegpt/basic');
+    expect(model.name, 'vsegpt/basic');
+    expect(model.contextLength, 8192);
+    expect(model.promptPrice, isNull);
+    expect(model.completionPrice, isNull);
+    expect(model.currencyCode, 'RUB');
+  });
 }

@@ -8,6 +8,7 @@ import 'package:aichatcline/features/chat/state/chat_controller.dart';
 import 'package:aichatcline/features/chat/ui/chat_screen.dart';
 import 'package:aichatcline/features/export/services/export_service.dart';
 import 'package:aichatcline/features/export/services/share_service.dart';
+import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/app_settings.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
@@ -31,6 +32,7 @@ class _AIChatAppState extends State<AIChatApp> {
   late final OpenAICompatibleClient _aiClient;
   late final ChatController _chatController;
   late final SettingsController _settingsController;
+  late final ModelCatalogController _modelCatalogController;
   late final StatisticsController _statisticsController;
   late final ExportService _exportService;
   late final ShareService _shareService;
@@ -57,6 +59,11 @@ class _AIChatAppState extends State<AIChatApp> {
       statsRepository: _statsRepository,
     );
 
+    _modelCatalogController = ModelCatalogController(
+      aiClient: _aiClient,
+      settingsController: _settingsController,
+    );
+
     _statisticsController = StatisticsController(
       statsRepository: _statsRepository,
     );
@@ -71,6 +78,7 @@ class _AIChatAppState extends State<AIChatApp> {
   @override
   void dispose() {
     _chatController.dispose();
+    _modelCatalogController.dispose();
     _settingsController.dispose();
     _statisticsController.dispose();
     _appDatabase.close();
@@ -80,7 +88,10 @@ class _AIChatAppState extends State<AIChatApp> {
   void _openSettings(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(controller: _settingsController),
+        builder: (_) => SettingsScreen(
+          controller: _settingsController,
+          modelCatalogController: _modelCatalogController,
+        ),
       ),
     );
   }
@@ -152,6 +163,7 @@ class _AIChatAppState extends State<AIChatApp> {
 
               return ChatScreen(
                 controller: _chatController,
+                modelCatalogController: _modelCatalogController,
                 exportService: _exportService,
                 shareService: _shareService,
                 providerName: _providerStatusName(),
