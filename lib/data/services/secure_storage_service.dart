@@ -23,15 +23,7 @@ class SecureStorageService {
       return;
     }
 
-    if (_useSecureStorage) {
-      await _storage.delete(key: apiKeyKey);
-      await _storage.write(key: apiKeyKey, value: trimmed);
-      return;
-    }
-
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.remove(apiKeyKey);
-    await prefs.setString(apiKeyKey, trimmed);
+    await _saveString(trimmed);
   }
 
   Future<String?> readApiKey() async {
@@ -60,5 +52,23 @@ class SecureStorageService {
     }
 
     await _storage.delete(key: apiKeyKey);
+  }
+
+  Future<void> _saveString(String value) async {
+    if (_useSecureStorage) {
+      await _storage.delete(key: apiKeyKey);
+      await _storage.write(key: apiKeyKey, value: value);
+      return;
+    }
+
+    if (_useSharedPreferences) {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.remove(apiKeyKey);
+      await prefs.setString(apiKeyKey, value);
+      return;
+    }
+
+    await _storage.delete(key: apiKeyKey);
+    await _storage.write(key: apiKeyKey, value: value);
   }
 }
