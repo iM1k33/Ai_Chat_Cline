@@ -10,6 +10,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'dart:io';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -43,6 +44,9 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   late final TextEditingController _messageController;
   final DateFormat _conversationDateFormat = DateFormat('yyyy-MM-dd HH:mm');
+
+  bool get _isDesktop =>
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   Future<void> _showExportSavedDialog(String filePath) async {
     if (!mounted) {
@@ -267,14 +271,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _openEditLastMessageDialog() async {
+  Future<void> _openEditMessageDialog(ChatMessage message) async {
     final ChatMessage? lastUser = widget.controller.lastUserMessage;
-    if (lastUser == null) {
+    if (lastUser == null || message.id != lastUser.id) {
       return;
     }
 
     final TextEditingController controller = TextEditingController(
-      text: lastUser.content,
+      text: message.content,
     );
 
     final bool? shouldSave = await showDialog<bool>(
@@ -310,6 +314,35 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     controller.dispose();
+  }
+
+  Future<void> _handleDesktopEnterSubmit({required bool shiftPressed}) async {
+    if (!_isDesktop) {
+      return;
+    }
+    if (shiftPressed) {
+      final String currentText = _messageController.text;
+      final TextSelection selection = _messageController.selection;
+      final int start = selection.start >= 0
+          ? selection.start
+          : currentText.length;
+      final int end = selection.end >= 0 ? selection.end : currentText.length;
+      final String updated =
+          '${currentText.substring(0, start)}\n${currentText.substring(end)}';
+      final int offset = start + 1;
+      _messageController.value = TextEditingValue(
+        text: updated,
+        selection: TextSelection.collapsed(offset: offset),
+      );
+      return;
+    }
+
+    if (_messageController.text.trim().isEmpty ||
+        widget.controller.isSending ||
+        widget.controller.isStreaming) {
+      return;
+    }
+    await _send();
   }
 
   Future<bool> _showDeleteCurrentConversationConfirmation() async {
@@ -368,20 +401,6 @@ class _ChatScreenState extends State<ChatScreen> {
     return _showDeleteCurrentConversationConfirmation();
   }
 
-  Future<void> _confirmAndDeleteCurrentConversation() async {
-    final Conversation? current = widget.controller.currentConversation;
-    if (current == null) {
-      return;
-    }
-
-    final bool confirmed = await _showDeleteCurrentConversationConfirmation();
-    if (!confirmed) {
-      return;
-    }
-
-    await widget.controller.deleteConversation(current.id);
-  }
-
   Future<void> _confirmAndDeleteAllConversations() async {
     final bool confirmed = await _showDeleteAllConversationsConfirmation();
     if (!confirmed) {
@@ -417,15 +436,39 @@ class _ChatScreenState extends State<ChatScreen> {
               children: <Widget>[
                 ListTile(
                   title: const Text('Conversations'),
-                  trailing: IconButton(
-                    tooltip: 'New chat',
-                    icon: const Icon(Icons.add_comment_outlined),
-                    onPressed: widget.controller.isStreaming
-                        ? null
-                        : () async {
-                            Navigator.of(bottomSheetContext).pop();
-                            await widget.controller.createNewConversation();
-                          },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      IconButton(
+                        tooltip: 'New chat',
+                        icon: const Icon(Icons.add_comment_outlined),
+                        onPressed: widget.controller.isStreaming
+                            ? null
+                            : () async {
+                                Navigator.of(bottomSheetContext).pop();
+                                await widget.controller.createNewConversation();
+                              },
+                      ),
+                      IconButton(
+                        tooltip: 'Delete all conversations',
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                        onPressed: widget.controller.isStreaming
+                            ? null
+                            : () async {
+                                final bool confirmed =
+                                    await _showDeleteAllConversationsConfirmation();
+                                if (!confirmed) {
+                                  return;
+                                }
+                                if (!bottomSheetContext.mounted) {
+                                  return;
+                                }
+                                Navigator.of(bottomSheetContext).pop();
+                                await widget.controller
+                                    .deleteAllConversations();
+                              },
+                      ),
+                    ],
                   ),
                 ),
                 Flexible(
@@ -504,6 +547,7 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: widget.controller,
       builder: (context, _) {
         final bool isWide = MediaQuery.of(context).size.width >= 800;
+        final bool isNarrow = !isWide;
         final Conversation? currentConversation =
             widget.controller.currentConversation;
         final String? conversationModelId = currentConversation?.selectedModelId
@@ -526,58 +570,162 @@ class _ChatScreenState extends State<ChatScreen> {
         }();
 
         return Scaffold(
-          appBar: AppBar(
-            title: Text(
-              widget.controller.currentConversation?.title ?? 'AI Chat',
-            ),
-            actions: [
-              if (!isWide)
-                IconButton(
-                  tooltip: 'Conversations',
-                  icon: const Icon(Icons.menu),
-                  onPressed: _openConversationSwitcher,
+          appBar: isNarrow
+              ? PreferredSize(
+                  preferredSize: const Size.fromHeight(120),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Row(
+                            children: <Widget>[
+                              IconButton(
+                                tooltip: 'Conversations',
+                                icon: const Icon(Icons.menu),
+                                onPressed: _openConversationSwitcher,
+                              ),
+                              IconButton(
+                                tooltip: 'Regenerate',
+                                icon: const Icon(Icons.refresh),
+                                onPressed:
+                                    widget.controller.isSending ||
+                                        widget.controller.isStreaming
+                                    ? null
+                                    : widget
+                                          .controller
+                                          .regenerateLastAssistantResponse,
+                              ),
+                              IconButton(
+                                tooltip: 'Export conversation',
+                                icon: const Icon(Icons.download_outlined),
+                                onPressed:
+                                    widget.controller.currentConversation ==
+                                        null
+                                    ? null
+                                    : _openExportDialog,
+                              ),
+                              const Spacer(),
+                              PopupMenuButton<_AppBarMenuAction>(
+                                tooltip: 'More actions',
+                                onSelected: (_AppBarMenuAction value) {
+                                  switch (value) {
+                                    case _AppBarMenuAction.statistics:
+                                      widget.onOpenStatistics?.call();
+                                      break;
+                                    case _AppBarMenuAction.settings:
+                                      widget.onOpenSettings?.call();
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) =>
+                                    <PopupMenuEntry<_AppBarMenuAction>>[
+                                      const PopupMenuItem<_AppBarMenuAction>(
+                                        value: _AppBarMenuAction.statistics,
+                                        child: ListTile(
+                                          leading: Icon(
+                                            Icons.analytics_outlined,
+                                          ),
+                                          title: Text('Statistics'),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                      const PopupMenuItem<_AppBarMenuAction>(
+                                        value: _AppBarMenuAction.settings,
+                                        child: ListTile(
+                                          leading: Icon(
+                                            Icons.settings_outlined,
+                                          ),
+                                          title: Text('Settings'),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                    ],
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              widget.controller.currentConversation?.title ??
+                                  'AI Chat',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'Provider: $providerStatusText  •  Model: $modelStatusText',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : AppBar(
+                  title: Text(
+                    widget.controller.currentConversation?.title ?? 'AI Chat',
+                  ),
+                  actions: [
+                    IconButton(
+                      tooltip: 'Regenerate',
+                      icon: const Icon(Icons.refresh),
+                      onPressed:
+                          widget.controller.isSending ||
+                              widget.controller.isStreaming
+                          ? null
+                          : widget.controller.regenerateLastAssistantResponse,
+                    ),
+                    IconButton(
+                      tooltip: 'Export conversation',
+                      icon: const Icon(Icons.download_outlined),
+                      onPressed: widget.controller.currentConversation == null
+                          ? null
+                          : _openExportDialog,
+                    ),
+                    PopupMenuButton<_AppBarMenuAction>(
+                      tooltip: 'More actions',
+                      onSelected: (_AppBarMenuAction value) {
+                        switch (value) {
+                          case _AppBarMenuAction.statistics:
+                            widget.onOpenStatistics?.call();
+                            break;
+                          case _AppBarMenuAction.settings:
+                            widget.onOpenSettings?.call();
+                            break;
+                        }
+                      },
+                      itemBuilder: (BuildContext context) =>
+                          <PopupMenuEntry<_AppBarMenuAction>>[
+                            const PopupMenuItem<_AppBarMenuAction>(
+                              value: _AppBarMenuAction.statistics,
+                              child: ListTile(
+                                leading: Icon(Icons.analytics_outlined),
+                                title: Text('Statistics'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            const PopupMenuItem<_AppBarMenuAction>(
+                              value: _AppBarMenuAction.settings,
+                              child: ListTile(
+                                leading: Icon(Icons.settings_outlined),
+                                title: Text('Settings'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ],
+                    ),
+                  ],
                 ),
-              IconButton(
-                tooltip: 'Export conversation',
-                icon: const Icon(Icons.download_outlined),
-                onPressed: widget.controller.currentConversation == null
-                    ? null
-                    : _openExportDialog,
-              ),
-              PopupMenuButton<_AppBarMenuAction>(
-                tooltip: 'More actions',
-                onSelected: (_AppBarMenuAction value) {
-                  switch (value) {
-                    case _AppBarMenuAction.statistics:
-                      widget.onOpenStatistics?.call();
-                      break;
-                    case _AppBarMenuAction.settings:
-                      widget.onOpenSettings?.call();
-                      break;
-                  }
-                },
-                itemBuilder: (BuildContext context) =>
-                    <PopupMenuEntry<_AppBarMenuAction>>[
-                      const PopupMenuItem<_AppBarMenuAction>(
-                        value: _AppBarMenuAction.statistics,
-                        child: ListTile(
-                          leading: Icon(Icons.analytics_outlined),
-                          title: Text('Statistics'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                      const PopupMenuItem<_AppBarMenuAction>(
-                        value: _AppBarMenuAction.settings,
-                        child: ListTile(
-                          leading: Icon(Icons.settings_outlined),
-                          title: Text('Settings'),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
-                    ],
-              ),
-            ],
-          ),
           body: SafeArea(
             child: Row(
               children: [
@@ -587,6 +735,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: _ConversationSidebar(
                       controller: widget.controller,
                       onDeleteConversation: _confirmAndDeleteConversationById,
+                      onDeleteAllConversations:
+                          _confirmAndDeleteAllConversations,
                     ),
                   ),
                 Expanded(
@@ -595,19 +745,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       _ActionBar(
                         controller: widget.controller,
                         isStreaming: widget.controller.isStreaming,
-                        showCompactNewChat: !isWide,
-                        onEditLastMessage: _openEditLastMessageDialog,
-                        onRegenerateLastResponse:
-                            widget.controller.regenerateLastAssistantResponse,
-                        onDeleteCurrentConversation:
-                            _confirmAndDeleteCurrentConversation,
-                        onDeleteAllConversations:
-                            _confirmAndDeleteAllConversations,
+                        visible: false,
                       ),
-                      _ProviderModelStatusBar(
-                        providerName: providerStatusText,
-                        modelStatusText: modelStatusText,
-                      ),
+                      if (isWide)
+                        _ProviderModelStatusBar(
+                          providerName: providerStatusText,
+                          modelStatusText: modelStatusText,
+                        ),
                       if (widget.controller.error != null)
                         Padding(
                           padding: const EdgeInsets.all(8),
@@ -624,6 +768,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           isLoading: widget.controller.isLoading,
                           streamingMessageId:
                               widget.controller.streamingMessageId,
+                          lastUserMessageId:
+                              widget.controller.lastUserMessage?.id,
+                          onEditMessage: _openEditMessageDialog,
                         ),
                       ),
                       _ChatInputBar(
@@ -632,6 +779,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         onStop: widget.controller.stopGeneration,
                         isSending: widget.controller.isSending,
                         isStreaming: widget.controller.isStreaming,
+                        isDesktop: _isDesktop,
+                        onDesktopEnterSubmit: _handleDesktopEnterSubmit,
                       ),
                     ],
                   ),
@@ -647,111 +796,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
 class _ActionBar extends StatelessWidget {
   const _ActionBar({
+    required this.visible,
     required this.controller,
     required this.isStreaming,
-    required this.showCompactNewChat,
-    required this.onEditLastMessage,
-    required this.onRegenerateLastResponse,
-    required this.onDeleteCurrentConversation,
-    required this.onDeleteAllConversations,
   });
 
+  final bool visible;
   final ChatController controller;
   final bool isStreaming;
-  final bool showCompactNewChat;
-  final Future<void> Function() onEditLastMessage;
-  final Future<void> Function() onRegenerateLastResponse;
-  final Future<void> Function() onDeleteCurrentConversation;
-  final Future<void> Function() onDeleteAllConversations;
 
   @override
   Widget build(BuildContext context) {
-    final bool isNarrow = MediaQuery.of(context).size.width < 700;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          if (showCompactNewChat)
-            FilledButton.tonalIcon(
-              onPressed: isStreaming ? null : controller.createNewConversation,
-              icon: const Icon(Icons.add_comment_outlined),
-              label: const Text('New chat'),
-            ),
-          FilledButton.tonalIcon(
-            onPressed: controller.isSending || isStreaming
-                ? null
-                : onRegenerateLastResponse,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Regenerate'),
-          ),
-          FilledButton.tonalIcon(
-            onPressed:
-                controller.isSending ||
-                    isStreaming ||
-                    controller.lastUserMessage == null
-                ? null
-                : onEditLastMessage,
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Edit last'),
-          ),
-          if (!isNarrow) ...<Widget>[
-            FilledButton.tonalIcon(
-              onPressed: controller.currentConversation == null || isStreaming
-                  ? null
-                  : onDeleteCurrentConversation,
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Delete current'),
-            ),
-            OutlinedButton.icon(
-              onPressed: isStreaming ? null : onDeleteAllConversations,
-              icon: const Icon(Icons.delete_sweep_outlined),
-              label: const Text('Delete all'),
-            ),
-          ] else
-            PopupMenuButton<_DangerAction>(
-              enabled: !isStreaming,
-              tooltip: 'More chat actions',
-              icon: const Icon(Icons.more_horiz),
-              onSelected: (_DangerAction value) {
-                switch (value) {
-                  case _DangerAction.deleteCurrent:
-                    onDeleteCurrentConversation();
-                    break;
-                  case _DangerAction.deleteAll:
-                    onDeleteAllConversations();
-                    break;
-                }
-              },
-              itemBuilder: (BuildContext context) =>
-                  <PopupMenuEntry<_DangerAction>>[
-                    const PopupMenuItem<_DangerAction>(
-                      value: _DangerAction.deleteCurrent,
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline),
-                        title: Text('Delete current'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    const PopupMenuItem<_DangerAction>(
-                      value: _DangerAction.deleteAll,
-                      child: ListTile(
-                        leading: Icon(Icons.delete_sweep_outlined),
-                        title: Text('Delete all'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ],
-            ),
-        ],
-      ),
-    );
+    if (!visible) {
+      return const SizedBox.shrink();
+    }
+    return const SizedBox.shrink();
   }
 }
-
-enum _DangerAction { deleteCurrent, deleteAll }
 
 enum _AppBarMenuAction { statistics, settings }
 
@@ -783,10 +844,12 @@ class _ConversationSidebar extends StatelessWidget {
   const _ConversationSidebar({
     required this.controller,
     required this.onDeleteConversation,
+    required this.onDeleteAllConversations,
   });
 
   final ChatController controller;
   final Future<void> Function(String conversationId) onDeleteConversation;
+  final Future<void> Function() onDeleteAllConversations;
 
   @override
   Widget build(BuildContext context) {
@@ -801,15 +864,26 @@ class _ConversationSidebar extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                onPressed: controller.isStreaming
-                    ? null
-                    : controller.createNewConversation,
-                icon: const Icon(Icons.add_comment_outlined),
-                label: const Text('New chat'),
-              ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: controller.isStreaming
+                        ? null
+                        : controller.createNewConversation,
+                    icon: const Icon(Icons.add_comment_outlined),
+                    label: const Text('New chat'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Delete all conversations',
+                  icon: const Icon(Icons.delete_sweep_outlined),
+                  onPressed: controller.isStreaming
+                      ? null
+                      : onDeleteAllConversations,
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -857,11 +931,15 @@ class _MessageList extends StatelessWidget {
     required this.messages,
     required this.isLoading,
     required this.streamingMessageId,
+    required this.lastUserMessageId,
+    required this.onEditMessage,
   });
 
   final List<ChatMessage> messages;
   final bool isLoading;
   final String? streamingMessageId;
+  final String? lastUserMessageId;
+  final Future<void> Function(ChatMessage) onEditMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -879,6 +957,8 @@ class _MessageList extends StatelessWidget {
       itemBuilder: (context, index) {
         final ChatMessage message = messages[index];
         final bool isUser = message.role == ChatMessageRole.user;
+        final bool isLatestUserMessage =
+            isUser && message.id == lastUserMessageId;
         final bool isStreamingAssistantMessage =
             !isUser && streamingMessageId == message.id;
         final bool isErrorMessage =
@@ -960,6 +1040,16 @@ class _MessageList extends StatelessWidget {
                     content: message.content,
                     isStreaming: isStreamingAssistantMessage,
                     textColor: textColor,
+                  ),
+                if (isLatestUserMessage)
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: IconButton(
+                      tooltip: 'Edit and resend',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => onEditMessage(message),
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                    ),
                   ),
               ],
             ),
@@ -1217,6 +1307,8 @@ class _ChatInputBar extends StatelessWidget {
     required this.onStop,
     required this.isSending,
     required this.isStreaming,
+    required this.isDesktop,
+    required this.onDesktopEnterSubmit,
   });
 
   final TextEditingController controller;
@@ -1224,6 +1316,9 @@ class _ChatInputBar extends StatelessWidget {
   final Future<void> Function() onStop;
   final bool isSending;
   final bool isStreaming;
+  final bool isDesktop;
+  final Future<void> Function({required bool shiftPressed})
+  onDesktopEnterSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -1237,6 +1332,21 @@ class _ChatInputBar extends StatelessWidget {
               enabled: !isSending,
               minLines: 1,
               maxLines: 5,
+              textInputAction: isDesktop
+                  ? TextInputAction.send
+                  : TextInputAction.newline,
+              onSubmitted: (_) async {
+                if (isDesktop) {
+                  await onDesktopEnterSubmit(shiftPressed: false);
+                }
+              },
+              onEditingComplete: () async {
+                if (isDesktop) {
+                  final bool shiftPressed =
+                      HardwareKeyboard.instance.isShiftPressed;
+                  await onDesktopEnterSubmit(shiftPressed: shiftPressed);
+                }
+              },
               decoration: const InputDecoration(
                 hintText: 'Type a message...',
                 border: OutlineInputBorder(),

@@ -173,4 +173,81 @@ void main() {
       expect(find.byTooltip('Copy code'), findsNothing);
     },
   );
+
+  testWidgets('latest user message shows edit icon only for latest', (
+    WidgetTester tester,
+  ) async {
+    final (
+      ChatController chatController,
+      ModelCatalogController modelCatalogController,
+    ) = await buildControllers();
+
+    chatController.messages = <ChatMessage>[
+      ChatMessage(
+        id: 'user-1',
+        conversationId: 'conv-1',
+        role: ChatMessageRole.user,
+        content: 'Older user message',
+        createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
+      ),
+      ChatMessage(
+        id: 'assistant-1',
+        conversationId: 'conv-1',
+        role: ChatMessageRole.assistant,
+        content: 'Assistant reply',
+        createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
+      ),
+      ChatMessage(
+        id: 'user-2',
+        conversationId: 'conv-1',
+        role: ChatMessageRole.user,
+        content: 'Latest user message',
+        createdAt: DateTime.now(),
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          controller: chatController,
+          modelCatalogController: modelCatalogController,
+          exportService: const ExportService(),
+          shareService: const ShareService(),
+          providerName: 'OpenRouter',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Edit and resend'), findsOneWidget);
+    expect(find.text('Edit last'), findsNothing);
+  });
+
+  testWidgets('wide layout shows delete-all in sidebar header', (
+    WidgetTester tester,
+  ) async {
+    final (
+      ChatController chatController,
+      ModelCatalogController modelCatalogController,
+    ) = await buildControllers();
+
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          controller: chatController,
+          modelCatalogController: modelCatalogController,
+          exportService: const ExportService(),
+          shareService: const ShareService(),
+          providerName: 'OpenRouter',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Delete all conversations'), findsOneWidget);
+    expect(find.text('Delete all'), findsNothing);
+  });
 }
