@@ -68,13 +68,24 @@ class ChatController extends ChangeNotifier {
   Future<void> createNewConversation() async {
     try {
       final DateTime now = DateTime.now();
+      final String? selectedModelId =
+          _settingsController.settings.selectedModelId?.trim();
+      final String? resolvedProviderId =
+          _settingsController.detectedProvider?.id ??
+          _settingsController.settings.selectedProviderId?.trim();
       final Conversation conversation = Conversation(
         id: _uuid.v4(),
         title: 'New chat',
         createdAt: now,
         updatedAt: now,
-        selectedModelId: null,
-        providerId: null,
+        selectedModelId:
+            (selectedModelId == null || selectedModelId.isEmpty)
+            ? null
+            : selectedModelId,
+        providerId:
+            (resolvedProviderId == null || resolvedProviderId.isEmpty)
+            ? null
+            : resolvedProviderId,
         systemPrompt: null,
         isPinned: false,
       );
@@ -405,11 +416,12 @@ class ChatController extends ChangeNotifier {
     required List<ChatCompletionMessage> completionMessages,
   }) async {
     final String apiKey = _settingsController.apiKey.trim();
-    final String? selectedModelId = _settingsController
-        .settings
-        .selectedModelId
-        ?.trim();
-    final AIProvider? provider = _resolveProvider();
+    final String? selectedModelId = _resolveModelIdForCurrentConversation(
+      conversation,
+    );
+    final AIProvider? provider = _resolveProviderForCurrentConversation(
+      conversation,
+    );
 
     if (provider == null) {
       await _insertAssistantError(
@@ -432,7 +444,7 @@ class ChatController extends ChangeNotifier {
     if (selectedModelId == null || selectedModelId.isEmpty) {
       await _insertAssistantError(
         conversation,
-        'Error: Model ID is missing. Set it in settings.',
+        'No model selected for this conversation. Choose a model for this chat or set a default model before creating a new chat.',
         provider: provider,
         modelId: selectedModelId,
       );
@@ -523,15 +535,33 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  AIProvider? _resolveProvider() {
+  String? _resolveModelIdForCurrentConversation(Conversation conversation) {
+    final String? conversationModelId = conversation.selectedModelId?.trim();
+    if (conversationModelId == null || conversationModelId.isEmpty) {
+      return null;
+    }
+
+    return conversationModelId;
+  }
+
+  AIProvider? _resolveProviderForCurrentConversation(Conversation conversation) {
+    final String? conversationProviderId = conversation.providerId?.trim();
+    final AIProvider? fromConversation = _providerFromId(conversationProviderId);
+    if (fromConversation != null) {
+      return fromConversation;
+    }
+
     final AIProvider? detected = _settingsController.detectedProvider;
     if (detected != null) {
       return detected;
     }
 
-    final String? selectedProviderId =
-        _settingsController.settings.selectedProviderId;
-    return switch (selectedProviderId) {
+    return null;
+  }
+
+  AIProvider? _providerFromId(String? providerId) {
+    final String? normalized = providerId?.trim();
+    return switch (normalized) {
       'openrouter' => AIProvider.openRouter,
       'vsegpt' => AIProvider.vsegpt,
       _ => null,

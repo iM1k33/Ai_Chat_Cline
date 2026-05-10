@@ -312,7 +312,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextField(
               controller: _modelIdController,
               decoration: const InputDecoration(
-                labelText: 'Model ID (manual fallback)',
+                labelText: 'Default model for new chats',
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (value) async {

@@ -445,19 +445,24 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: widget.controller,
       builder: (context, _) {
         final bool isWide = MediaQuery.of(context).size.width >= 800;
+        final Conversation? currentConversation =
+            widget.controller.currentConversation;
+        final String? conversationModelId =
+            currentConversation?.selectedModelId?.trim();
+        final String? conversationProviderId =
+            currentConversation?.providerId?.trim();
+
+        final String providerStatusText =
+            (conversationProviderId != null && conversationProviderId.isNotEmpty)
+            ? conversationProviderId
+            : widget.providerName;
+
         final String modelStatusText = () {
-          final String? selectedName =
-              widget.modelCatalogController.selectedModel?.name;
-          if (selectedName != null && selectedName.trim().isNotEmpty) {
-            return selectedName;
+          if (conversationModelId != null && conversationModelId.isNotEmpty) {
+            return conversationModelId;
           }
 
-          if (widget.selectedModelId != null &&
-              widget.selectedModelId!.trim().isNotEmpty) {
-            return widget.selectedModelId!;
-          }
-
-          return 'No model selected';
+          return 'No model selected for this chat';
         }();
 
         return Scaffold(
@@ -517,7 +522,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             _confirmAndDeleteAllConversations,
                       ),
                       _ProviderModelStatusBar(
-                        providerName: widget.providerName,
+                        providerName: providerStatusText,
                         modelStatusText: modelStatusText,
                       ),
                       if (widget.controller.error != null)
