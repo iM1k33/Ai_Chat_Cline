@@ -1,10 +1,12 @@
 import 'package:aichatcline/features/chat/models/chat_message.dart';
 import 'package:aichatcline/features/chat/models/conversation.dart';
 import 'package:aichatcline/features/chat/state/chat_controller.dart';
+import 'package:aichatcline/core/utils/app_logger.dart';
 import 'package:aichatcline/features/export/services/export_service.dart';
 import 'package:aichatcline/features/export/services/share_service.dart';
 import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +19,7 @@ class ChatScreen extends StatefulWidget {
     required this.exportService,
     required this.shareService,
     required this.providerName,
+    this.appLogger,
     this.selectedModelId,
     this.onOpenSettings,
     this.onOpenStatistics,
@@ -27,6 +30,7 @@ class ChatScreen extends StatefulWidget {
   final ExportService exportService;
   final ShareService shareService;
   final String providerName;
+  final AppLogger? appLogger;
   final String? selectedModelId;
 
   final VoidCallback? onOpenSettings;
@@ -165,13 +169,46 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
+      if (widget.appLogger != null) {
+        await widget.appLogger!.logInfo(
+          category: 'export',
+          message: 'Conversation export succeeded',
+          metadata: <String, dynamic>{
+            'conversationId': conversation.id,
+            'format': selectedFormat.name,
+            'path': file.path,
+          },
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Export saved: ${file.path}'),
           duration: const Duration(seconds: 5),
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      if (widget.appLogger != null) {
+        await widget.appLogger!.logError(
+          category: 'export',
+          message: 'Conversation export failed',
+          metadata: <String, dynamic>{
+            'conversationId': conversation.id,
+            'format': selectedFormat.name,
+            'errorType': e.runtimeType.toString(),
+            'error': e.toString(),
+          },
+        );
+      }
+
       if (!mounted) {
         return;
       }
@@ -544,6 +581,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: _MessageList(
                           messages: widget.controller.messages,
                           isLoading: widget.controller.isLoading,
+                          streamingMessageId: widget.controller.streamingMessageId,
                         ),
                       ),
                       _ChatInputBar(
@@ -728,10 +766,15 @@ class _ConversationSidebar extends StatelessWidget {
 }
 
 class _MessageList extends StatelessWidget {
-  const _MessageList({required this.messages, required this.isLoading});
+  const _MessageList({
+    required this.messages,
+    required this.isLoading,
+    required this.streamingMessageId,
+  });
 
   final List<ChatMessage> messages;
   final bool isLoading;
+  final String? streamingMessageId;
 
   @override
   Widget build(BuildContext context) {
@@ -751,6 +794,8 @@ class _MessageList extends StatelessWidget {
       itemBuilder: (context, index) {
         final ChatMessage message = messages[index];
         final bool isUser = message.role == ChatMessageRole.user;
+        final bool isStreamingAssistantMessage =
+            !isUser && streamingMessageId == message.id;
 
         return Align(
           alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -795,7 +840,13 @@ class _MessageList extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(message.content),
+                if (isUser)
+                  Text(message.content)
+                else
+                  _AssistantMessageContent(
+                    content: message.content,
+                    isStreaming: isStreamingAssistantMessage,
+                  ),
               ],
             ),
           ),
@@ -803,6 +854,199 @@ class _MessageList extends StatelessWidget {
       },
     );
   }
+}
+
+class _AssistantMessageContent extends StatelessWidget {
+  const _AssistantMessageContent({
+    required this.content,
+    required this.isStreaming,
+  });
+
+  final String content;
+  final bool isStreaming;
+
+  @override
+  Widget build(BuildContext context) {
+    if (content.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    if (isStreaming) {
+      return Text(content);
+    }
+
+    final List<_AssistantMessageSegment> segments =
+        _parseAssistantMessageSegments(content);
+
+    if (segments.isEmpty) {
+      return Text(content);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int i = 0; i < segments.length; i++) ...[
+          if (segments[i].isCode)
+            _AssistantCodeBlock(
+              code: segments[i].content,
+              language: segments[i].language,
+            )
+          else
+            MarkdownBody(
+              data: segments[i].content,
+              shrinkWrap: true,
+              selectable: true,
+            ),
+          if (i < segments.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _AssistantCodeBlock extends StatelessWidget {
+  const _AssistantCodeBlock({required this.code, this.language});
+
+  final String code;
+  final String? language;
+
+  @override
+  Widget build(BuildContext context) {
+    final String trimmedLanguage = language?.trim() ?? '';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  trimmedLanguage.isEmpty ? 'Code' : trimmedLanguage,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Copy code',
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: code));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Code copied')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.copy_outlined, size: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Text(
+              code,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssistantMessageSegment {
+  const _AssistantMessageSegment.markdown(this.content)
+    : isCode = false,
+      language = null;
+
+  const _AssistantMessageSegment.code(this.content, {this.language})
+    : isCode = true;
+
+  final bool isCode;
+  final String content;
+  final String? language;
+}
+
+List<_AssistantMessageSegment> _parseAssistantMessageSegments(String content) {
+  final List<_AssistantMessageSegment> segments =
+      <_AssistantMessageSegment>[];
+  final List<String> lines = content.split('\n');
+
+  StringBuffer markdownBuffer = StringBuffer();
+  StringBuffer codeBuffer = StringBuffer();
+  bool inCodeBlock = false;
+  String? codeLanguage;
+  String? unclosedFenceHeader;
+
+  void flushMarkdown() {
+    final String markdownText = markdownBuffer.toString();
+    if (markdownText.trim().isNotEmpty) {
+      segments.add(_AssistantMessageSegment.markdown(markdownText));
+    }
+    markdownBuffer = StringBuffer();
+  }
+
+  for (final String line in lines) {
+    final String trimmedLeft = line.trimLeft();
+    if (trimmedLeft.startsWith('```')) {
+      if (!inCodeBlock) {
+        flushMarkdown();
+        inCodeBlock = true;
+        codeLanguage = trimmedLeft.substring(3).trim();
+        if (codeLanguage.isEmpty) {
+          codeLanguage = null;
+        }
+        unclosedFenceHeader = line;
+        codeBuffer = StringBuffer();
+      } else {
+        segments.add(
+          _AssistantMessageSegment.code(
+            _trimTrailingLineBreak(codeBuffer.toString()),
+            language: codeLanguage,
+          ),
+        );
+        inCodeBlock = false;
+        codeLanguage = null;
+        unclosedFenceHeader = null;
+        codeBuffer = StringBuffer();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBuffer.writeln(line);
+    } else {
+      markdownBuffer.writeln(line);
+    }
+  }
+
+  if (inCodeBlock) {
+    markdownBuffer.writeln(unclosedFenceHeader ?? '```');
+    markdownBuffer.write(codeBuffer.toString());
+  }
+
+  flushMarkdown();
+  return segments;
+}
+
+String _trimTrailingLineBreak(String value) {
+  String trimmed = value;
+  while (trimmed.endsWith('\n') || trimmed.endsWith('\r')) {
+    trimmed = trimmed.substring(0, trimmed.length - 1);
+  }
+  return trimmed;
 }
 
 class _ChatInputBar extends StatelessWidget {

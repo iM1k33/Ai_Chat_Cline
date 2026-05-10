@@ -1,6 +1,8 @@
 import 'package:aichatcline/app/app_theme.dart';
+import 'package:aichatcline/core/utils/app_logger.dart';
 import 'package:aichatcline/data/database/app_database.dart';
 import 'package:aichatcline/data/repositories/chat_repository.dart';
+import 'package:aichatcline/data/repositories/logs_repository.dart';
 import 'package:aichatcline/data/repositories/stats_repository.dart';
 import 'package:aichatcline/data/services/secure_storage_service.dart';
 import 'package:aichatcline/data/services/settings_storage_service.dart';
@@ -8,6 +10,7 @@ import 'package:aichatcline/features/chat/state/chat_controller.dart';
 import 'package:aichatcline/features/chat/ui/chat_screen.dart';
 import 'package:aichatcline/features/export/services/export_service.dart';
 import 'package:aichatcline/features/export/services/share_service.dart';
+import 'package:aichatcline/features/logs/ui/logs_screen.dart';
 import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/app_settings.dart';
@@ -28,10 +31,12 @@ class AIChatApp extends StatefulWidget {
 class _AIChatAppState extends State<AIChatApp> {
   late final AppDatabase _appDatabase;
   late final ChatRepository _chatRepository;
+  late final LogsRepository _logsRepository;
   late final StatsRepository _statsRepository;
   late final OpenAICompatibleClient _aiClient;
   late final ChatController _chatController;
   late final SettingsController _settingsController;
+  late final AppLogger _appLogger;
   late final ModelCatalogController _modelCatalogController;
   late final StatisticsController _statisticsController;
   late final ExportService _exportService;
@@ -43,14 +48,18 @@ class _AIChatAppState extends State<AIChatApp> {
 
     _appDatabase = AppDatabase();
     _chatRepository = ChatRepository(appDatabase: _appDatabase);
+    _logsRepository = LogsRepository(appDatabase: _appDatabase);
     _statsRepository = StatsRepository(appDatabase: _appDatabase);
     _aiClient = OpenAICompatibleClient();
+    _appLogger = AppLogger(logsRepository: _logsRepository);
 
     _settingsController = SettingsController(
       settingsStorage: const SettingsStorageService(),
       secureStorage: SecureStorageService(),
       aiClient: _aiClient,
+      appLogger: _appLogger,
     );
+    _appLogger.attachSettingsController(_settingsController);
 
     _modelCatalogController = ModelCatalogController(
       aiClient: _aiClient,
@@ -63,6 +72,7 @@ class _AIChatAppState extends State<AIChatApp> {
       modelCatalogController: _modelCatalogController,
       aiClient: _aiClient,
       statsRepository: _statsRepository,
+      appLogger: _appLogger,
     );
 
     _statisticsController = StatisticsController(
@@ -89,9 +99,21 @@ class _AIChatAppState extends State<AIChatApp> {
   void _openSettings(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(
+        builder: (settingsContext) => SettingsScreen(
           controller: _settingsController,
           modelCatalogController: _modelCatalogController,
+          onOpenLogs: () => _openLogs(settingsContext),
+        ),
+      ),
+    );
+  }
+
+  void _openLogs(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogsScreen(
+          logsRepository: _logsRepository,
+          shareService: _shareService,
         ),
       ),
     );
@@ -168,6 +190,7 @@ class _AIChatAppState extends State<AIChatApp> {
                 exportService: _exportService,
                 shareService: _shareService,
                 providerName: _providerStatusName(),
+                appLogger: _appLogger,
                 selectedModelId: _selectedModelIdOrNull(),
                 onOpenSettings: () => _openSettings(context),
                 onOpenStatistics: () => _openStatistics(context),

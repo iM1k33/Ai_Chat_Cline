@@ -4,6 +4,7 @@ class DatabaseTables {
   static const String conversations = 'conversations';
   static const String messages = 'messages';
   static const String usageRecords = 'usage_records';
+  static const String logs = 'logs';
 
   static const String createConversationsTable =
       '''
@@ -56,6 +57,18 @@ CREATE TABLE $usageRecords (
 )
 ''';
 
+  static const String createLogsTable =
+      '''
+CREATE TABLE $logs (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  level TEXT NOT NULL,
+  category TEXT NOT NULL,
+  message TEXT NOT NULL,
+  metadata_json TEXT
+)
+''';
+
   static const String createMessagesConversationCreatedIndex =
       '''
 CREATE INDEX messages_conversation_created_idx
@@ -72,5 +85,11 @@ ON $usageRecords(provider_id, model_id, created_at)
       '''
 CREATE INDEX usage_conversation_created_idx
 ON $usageRecords(conversation_id, created_at)
+''';
+
+  static const String createLogsCreatedIndex =
+      '''
+CREATE INDEX logs_created_idx
+ON $logs(created_at)
 ''';
 }

@@ -1,3 +1,4 @@
+import 'package:aichatcline/core/utils/app_logger.dart';
 import 'package:aichatcline/data/services/secure_storage_service.dart';
 import 'package:aichatcline/data/services/settings_storage_service.dart';
 import 'package:aichatcline/core/errors/app_exception.dart';
@@ -13,13 +14,16 @@ class SettingsController extends ChangeNotifier {
     required SettingsStorageService settingsStorage,
     required SecureStorageService secureStorage,
     required OpenAICompatibleClient aiClient,
+    AppLogger? appLogger,
   }) : _settingsStorage = settingsStorage,
        _secureStorage = secureStorage,
-       _aiClient = aiClient;
+       _aiClient = aiClient,
+       _appLogger = appLogger;
 
   final SettingsStorageService _settingsStorage;
   final SecureStorageService _secureStorage;
   final OpenAICompatibleClient _aiClient;
+  final AppLogger? _appLogger;
 
   AppSettings settings = AppSettings.defaults();
   String apiKey = '';
@@ -59,6 +63,11 @@ class SettingsController extends ChangeNotifier {
       }
     } catch (e) {
       error = 'Failed to load settings';
+      await _appLogger?.logError(
+        category: 'settings',
+        message: 'Failed to load settings',
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
     } finally {
       isLoading = false;
       notifyListeners();
@@ -86,6 +95,11 @@ class SettingsController extends ChangeNotifier {
       final String message = e.toString().trim();
       final String safeMessage = message.isEmpty ? 'Unknown error' : message;
       error = 'Failed to save API key [${e.runtimeType}]: $safeMessage';
+      await _appLogger?.logWarning(
+        category: 'settings',
+        message: 'Failed to save API key',
+        metadata: <String, dynamic>{'error': safeMessage},
+      );
     }
 
     notifyListeners();
@@ -98,6 +112,11 @@ class SettingsController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await _appLogger?.logInfo(
+        category: 'validation',
+        message: 'API key validation started',
+      );
+
       if (trimmed.isEmpty) {
         throw Exception('API key is required');
       }
@@ -128,6 +147,12 @@ class SettingsController extends ChangeNotifier {
       );
       await _settingsStorage.saveSettings(settings);
       error = null;
+
+      await _appLogger?.logInfo(
+        category: 'validation',
+        message: 'API key validation succeeded',
+        metadata: <String, dynamic>{'providerId': provider.id},
+      );
     } catch (e) {
       await _secureStorage.deleteApiKey();
       apiKey = '';
@@ -146,6 +171,15 @@ class SettingsController extends ChangeNotifier {
             ? 'Failed to validate API key'
             : message;
       }
+
+      await _appLogger?.logWarning(
+        category: 'validation',
+        message: 'API key validation failed',
+        metadata: <String, dynamic>{
+          'errorType': e.runtimeType.toString(),
+          'error': error ?? 'Unknown validation failure',
+        },
+      );
     } finally {
       isValidatingApiKey = false;
       notifyListeners();
@@ -214,6 +248,11 @@ class SettingsController extends ChangeNotifier {
       isValidatingApiKey = false;
     } catch (e) {
       error = 'Failed to reset settings';
+      await _appLogger?.logWarning(
+        category: 'settings',
+        message: 'Failed to reset settings',
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
     }
 
     notifyListeners();
@@ -229,6 +268,11 @@ class SettingsController extends ChangeNotifier {
       await _settingsStorage.saveSettings(settings);
     } catch (e) {
       error = errorMessage;
+      await _appLogger?.logWarning(
+        category: 'settings',
+        message: errorMessage,
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
     }
 
     notifyListeners();

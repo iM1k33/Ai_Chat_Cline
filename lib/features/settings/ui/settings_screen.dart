@@ -10,10 +10,12 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.modelCatalogController,
+    this.onOpenLogs,
   });
 
   final SettingsController controller;
   final ModelCatalogController modelCatalogController;
+  final VoidCallback? onOpenLogs;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -415,6 +417,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               },
             ),
+            if (widget.onOpenLogs != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: widget.onOpenLogs,
+                  icon: const Icon(Icons.bug_report_outlined),
+                  label: const Text('Open logs'),
+                ),
+              ),
             const Divider(height: 24),
             TextField(
               controller: _temperatureController,

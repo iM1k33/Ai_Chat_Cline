@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:aichatcline/core/errors/app_exception.dart';
+import 'package:aichatcline/core/utils/app_logger.dart';
 import 'package:aichatcline/data/repositories/chat_repository.dart';
 import 'package:aichatcline/data/repositories/stats_repository.dart';
 import 'package:aichatcline/features/chat/models/chat_message.dart';
@@ -23,17 +24,20 @@ class ChatController extends ChangeNotifier {
     required ModelCatalogController modelCatalogController,
     required OpenAICompatibleClient aiClient,
     required StatsRepository statsRepository,
+    AppLogger? appLogger,
   }) : _chatRepository = chatRepository,
        _settingsController = settingsController,
        _modelCatalogController = modelCatalogController,
        _aiClient = aiClient,
-       _statsRepository = statsRepository;
+       _statsRepository = statsRepository,
+       _appLogger = appLogger;
 
   final ChatRepository _chatRepository;
   final SettingsController _settingsController;
   final ModelCatalogController _modelCatalogController;
   final OpenAICompatibleClient _aiClient;
   final StatsRepository _statsRepository;
+  final AppLogger? _appLogger;
   final Uuid _uuid = const Uuid();
 
   List<Conversation> conversations = <Conversation>[];
@@ -190,6 +194,11 @@ class ChatController extends ChangeNotifier {
     if (!isStreaming) {
       return;
     }
+
+    await _appLogger?.logInfo(
+      category: 'chat',
+      message: 'Streaming stopped by user',
+    );
 
     _stopStreamingRequested = true;
 
@@ -463,6 +472,10 @@ class ChatController extends ChangeNotifier {
     );
 
     if (provider == null) {
+      await _appLogger?.logWarning(
+        category: 'chat',
+        message: 'Chat request failed: provider is not configured',
+      );
       await _insertAssistantError(
         conversation,
         'Error: Provider is not configured. Select OpenRouter or VSEGPT in settings.',
@@ -471,6 +484,10 @@ class ChatController extends ChangeNotifier {
     }
 
     if (apiKey.isEmpty) {
+      await _appLogger?.logWarning(
+        category: 'chat',
+        message: 'Chat request failed: API key is missing',
+      );
       await _insertAssistantError(
         conversation,
         'Error: API key is missing. Set it in settings.',
@@ -481,6 +498,10 @@ class ChatController extends ChangeNotifier {
     }
 
     if (selectedModelId == null || selectedModelId.isEmpty) {
+      await _appLogger?.logWarning(
+        category: 'chat',
+        message: 'Chat request failed: model is not selected',
+      );
       await _insertAssistantError(
         conversation,
         'No model selected for this conversation. Choose a model for this chat or set a default model before creating a new chat.',
@@ -505,6 +526,17 @@ class ChatController extends ChangeNotifier {
       presencePenalty:
           _settingsController.settings.modelParameters.presencePenalty,
       stream: shouldStream,
+    );
+
+    await _appLogger?.logInfo(
+      category: 'api',
+      message: 'Chat request started',
+      metadata: <String, dynamic>{
+        'providerId': provider.id,
+        'modelId': selectedModelId,
+        'streaming': shouldStream,
+        'messagesCount': completionMessages.length,
+      },
     );
 
     if (shouldStream) {
@@ -584,6 +616,20 @@ class ChatController extends ChangeNotifier {
       await _chatRepository.upsertConversation(
         conversation.copyWith(updatedAt: DateTime.now()),
       );
+
+      await _appLogger?.logInfo(
+        category: 'api',
+        message: 'Chat request succeeded',
+        metadata: <String, dynamic>{
+          'providerId': provider.id,
+          'modelId': response.model ?? selectedModelId,
+          'streaming': false,
+          'promptTokens': response.promptTokens ?? 0,
+          'completionTokens': response.completionTokens ?? 0,
+          'totalTokens': response.totalTokens ?? 0,
+          'responseTimeMs': stopwatch.elapsedMilliseconds,
+        },
+      );
     } catch (e) {
       stopwatch.stop();
 
@@ -597,6 +643,19 @@ class ChatController extends ChangeNotifier {
         provider: provider,
         modelId: selectedModelId,
         responseTimeMs: stopwatch.elapsedMilliseconds,
+      );
+
+      await _appLogger?.logError(
+        category: 'api',
+        message: 'Chat request failed',
+        metadata: <String, dynamic>{
+          'providerId': provider.id,
+          'modelId': selectedModelId,
+          'streaming': false,
+          'error': safeError,
+          'errorType': e.runtimeType.toString(),
+          'responseTimeMs': stopwatch.elapsedMilliseconds,
+        },
       );
     } finally {
       isSending = false;
@@ -735,6 +794,34 @@ class ChatController extends ChangeNotifier {
         await _chatRepository.upsertConversation(
           conversation.copyWith(updatedAt: DateTime.now()),
         );
+
+        if (normalizedError == null) {
+          await _appLogger?.logInfo(
+            category: 'api',
+            message: 'Chat request succeeded',
+            metadata: <String, dynamic>{
+              'providerId': provider.id,
+              'modelId': resolvedModelId,
+              'streaming': true,
+              'promptTokens': hasUsage ? finalPromptTokens : 0,
+              'completionTokens': hasUsage ? finalCompletionTokens : 0,
+              'totalTokens': hasUsage ? finalTotalTokens : 0,
+              'responseTimeMs': responseTimeMs,
+            },
+          );
+        } else {
+          await _appLogger?.logError(
+            category: 'api',
+            message: 'Chat request failed',
+            metadata: <String, dynamic>{
+              'providerId': provider.id,
+              'modelId': resolvedModelId,
+              'streaming': true,
+              'error': normalizedError,
+              'responseTimeMs': responseTimeMs,
+            },
+          );
+        }
       } catch (_) {
         error = 'Failed to finalize streamed response';
       } finally {
