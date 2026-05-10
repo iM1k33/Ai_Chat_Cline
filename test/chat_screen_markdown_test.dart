@@ -250,4 +250,60 @@ void main() {
     expect(find.byTooltip('Delete all conversations'), findsOneWidget);
     expect(find.text('Delete all'), findsNothing);
   });
+
+  testWidgets(
+    'canceling edit dialog keeps message unchanged and throws no exception',
+    (WidgetTester tester) async {
+      final (
+        ChatController chatController,
+        ModelCatalogController modelCatalogController,
+      ) = await buildControllers();
+
+      chatController.messages = <ChatMessage>[
+        ChatMessage(
+          id: 'user-1',
+          conversationId: 'conv-1',
+          role: ChatMessageRole.user,
+          content: 'Original user message',
+          createdAt: DateTime.now(),
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChatScreen(
+            controller: chatController,
+            modelCatalogController: modelCatalogController,
+            exportService: const ExportService(),
+            shareService: const ShareService(),
+            providerName: 'OpenRouter',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Edit and resend'), findsOneWidget);
+      await tester.tap(find.byTooltip('Edit and resend'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit last user message'), findsOneWidget);
+      final Finder editDialogTextField = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      expect(editDialogTextField, findsOneWidget);
+
+      final String longText = '${'very long text ' * 40}tail';
+      await tester.enterText(editDialogTextField, longText);
+      await tester.pump();
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit last user message'), findsNothing);
+      expect(chatController.messages.first.content, 'Original user message');
+      expect(find.text('Original user message'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -277,43 +277,20 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final TextEditingController controller = TextEditingController(
-      text: message.content,
-    );
-
-    final bool? shouldSave = await showDialog<bool>(
+    final String? editedText = await showDialog<String>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Edit last user message'),
-          content: TextField(
-            controller: controller,
-            minLines: 3,
-            maxLines: 8,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Edit your message...',
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Save & resend'),
-            ),
-          ],
-        );
+      builder: (BuildContext dialogContext) {
+        return _EditLastMessageDialog(initialText: message.content);
       },
     );
 
-    if (shouldSave == true) {
-      await widget.controller.editLastUserMessageAndResend(controller.text);
+    if (!mounted) {
+      return;
     }
 
-    controller.dispose();
+    if (editedText != null) {
+      await widget.controller.editLastUserMessageAndResend(editedText);
+    }
   }
 
   Future<void> _handleDesktopEnterSubmit({required bool shiftPressed}) async {
@@ -343,6 +320,23 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     await _send();
+  }
+
+  KeyEventResult _handleDesktopInputKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_isDesktop || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final bool isEnter =
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!isEnter) {
+      return KeyEventResult.ignored;
+    }
+
+    final bool shiftPressed = HardwareKeyboard.instance.isShiftPressed;
+    _handleDesktopEnterSubmit(shiftPressed: shiftPressed);
+    return KeyEventResult.handled;
   }
 
   Future<bool> _showDeleteCurrentConversationConfirmation() async {
@@ -587,9 +581,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                 icon: const Icon(Icons.menu),
                                 onPressed: _openConversationSwitcher,
                               ),
-                              IconButton(
-                                tooltip: 'Regenerate',
-                                icon: const Icon(Icons.refresh),
+                              FilledButton.tonalIcon(
+                                icon: const Icon(Icons.refresh, size: 18),
+                                label: const Text('Regenerate'),
                                 onPressed:
                                     widget.controller.isSending ||
                                         widget.controller.isStreaming
@@ -598,6 +592,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                           .controller
                                           .regenerateLastAssistantResponse,
                               ),
+                              const Spacer(),
                               IconButton(
                                 tooltip: 'Export conversation',
                                 icon: const Icon(Icons.download_outlined),
@@ -607,7 +602,6 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ? null
                                     : _openExportDialog,
                               ),
-                              const Spacer(),
                               PopupMenuButton<_AppBarMenuAction>(
                                 tooltip: 'More actions',
                                 onSelected: (_AppBarMenuAction value) {
@@ -676,15 +670,16 @@ class _ChatScreenState extends State<ChatScreen> {
                     widget.controller.currentConversation?.title ?? 'AI Chat',
                   ),
                   actions: [
-                    IconButton(
-                      tooltip: 'Regenerate',
-                      icon: const Icon(Icons.refresh),
+                    FilledButton.tonalIcon(
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Regenerate'),
                       onPressed:
                           widget.controller.isSending ||
                               widget.controller.isStreaming
                           ? null
                           : widget.controller.regenerateLastAssistantResponse,
                     ),
+                    const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Export conversation',
                       icon: const Icon(Icons.download_outlined),
@@ -780,7 +775,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         isSending: widget.controller.isSending,
                         isStreaming: widget.controller.isStreaming,
                         isDesktop: _isDesktop,
-                        onDesktopEnterSubmit: _handleDesktopEnterSubmit,
+                        onDesktopKeyEvent: _handleDesktopInputKeyEvent,
                       ),
                     ],
                   ),
@@ -879,6 +874,12 @@ class _ConversationSidebar extends StatelessWidget {
                 IconButton(
                   tooltip: 'Delete all conversations',
                   icon: const Icon(Icons.delete_sweep_outlined),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                   onPressed: controller.isStreaming
                       ? null
                       : onDeleteAllConversations,
@@ -1231,6 +1232,59 @@ class _AssistantMessageSegment {
   final String? language;
 }
 
+class _EditLastMessageDialog extends StatefulWidget {
+  const _EditLastMessageDialog({required this.initialText});
+
+  final String initialText;
+
+  @override
+  State<_EditLastMessageDialog> createState() => _EditLastMessageDialogState();
+}
+
+class _EditLastMessageDialogState extends State<_EditLastMessageDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit last user message'),
+      content: TextField(
+        controller: _controller,
+        minLines: 4,
+        maxLines: null,
+        keyboardType: TextInputType.multiline,
+        textInputAction: TextInputAction.newline,
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          hintText: 'Edit your message...',
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('Save & resend'),
+        ),
+      ],
+    );
+  }
+}
+
 List<_AssistantMessageSegment> _parseAssistantMessageSegments(String content) {
   final List<_AssistantMessageSegment> segments = <_AssistantMessageSegment>[];
   final List<String> lines = content.split('\n');
@@ -1308,7 +1362,7 @@ class _ChatInputBar extends StatelessWidget {
     required this.isSending,
     required this.isStreaming,
     required this.isDesktop,
-    required this.onDesktopEnterSubmit,
+    this.onDesktopKeyEvent,
   });
 
   final TextEditingController controller;
@@ -1317,8 +1371,8 @@ class _ChatInputBar extends StatelessWidget {
   final bool isSending;
   final bool isStreaming;
   final bool isDesktop;
-  final Future<void> Function({required bool shiftPressed})
-  onDesktopEnterSubmit;
+  final KeyEventResult Function(FocusNode node, KeyEvent event)?
+  onDesktopKeyEvent;
 
   @override
   Widget build(BuildContext context) {
@@ -1327,29 +1381,30 @@ class _ChatInputBar extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: controller,
-              enabled: !isSending,
-              minLines: 1,
-              maxLines: 5,
-              textInputAction: isDesktop
-                  ? TextInputAction.send
-                  : TextInputAction.newline,
-              onSubmitted: (_) async {
-                if (isDesktop) {
-                  await onDesktopEnterSubmit(shiftPressed: false);
-                }
-              },
-              onEditingComplete: () async {
-                if (isDesktop) {
-                  final bool shiftPressed =
-                      HardwareKeyboard.instance.isShiftPressed;
-                  await onDesktopEnterSubmit(shiftPressed: shiftPressed);
-                }
-              },
-              decoration: const InputDecoration(
-                hintText: 'Type a message...',
-                border: OutlineInputBorder(),
+            child: Focus(
+              onKeyEvent: isDesktop ? onDesktopKeyEvent : null,
+              child: TextField(
+                controller: controller,
+                enabled: !isSending,
+                minLines: 1,
+                maxLines: 5,
+                textInputAction: isDesktop
+                    ? TextInputAction.newline
+                    : TextInputAction.newline,
+                onSubmitted: (_) async {
+                  if (isDesktop) {
+                    return;
+                  }
+                },
+                onEditingComplete: () async {
+                  if (isDesktop) {
+                    return;
+                  }
+                },
+                decoration: const InputDecoration(
+                  hintText: 'Type a message...',
+                  border: OutlineInputBorder(),
+                ),
               ),
             ),
           ),
