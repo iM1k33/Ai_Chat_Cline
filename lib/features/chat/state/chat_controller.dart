@@ -25,12 +25,14 @@ class ChatController extends ChangeNotifier {
     required OpenAICompatibleClient aiClient,
     required StatsRepository statsRepository,
     AppLogger? appLogger,
+    Future<void> Function()? onAssistantResponseCompleted,
   }) : _chatRepository = chatRepository,
        _settingsController = settingsController,
        _modelCatalogController = modelCatalogController,
        _aiClient = aiClient,
        _statsRepository = statsRepository,
-       _appLogger = appLogger;
+       _appLogger = appLogger,
+       _onAssistantResponseCompleted = onAssistantResponseCompleted;
 
   final ChatRepository _chatRepository;
   final SettingsController _settingsController;
@@ -38,6 +40,7 @@ class ChatController extends ChangeNotifier {
   final OpenAICompatibleClient _aiClient;
   final StatsRepository _statsRepository;
   final AppLogger? _appLogger;
+  final Future<void> Function()? _onAssistantResponseCompleted;
   final Uuid _uuid = const Uuid();
 
   List<Conversation> conversations = <Conversation>[];
@@ -75,6 +78,8 @@ class ChatController extends ChangeNotifier {
       } else {
         await createNewConversation();
       }
+
+      await ensureCurrentConversationHasDefaultModel();
     } catch (_) {
       error = 'Failed to load chats';
       isLoading = false;
@@ -114,6 +119,64 @@ class ChatController extends ChangeNotifier {
       error = 'Failed to create chat';
       notifyListeners();
     }
+  }
+
+  Future<void> ensureCurrentConversationHasDefaultModel() async {
+    final Conversation? conversation = currentConversation;
+    if (conversation == null) {
+      return;
+    }
+
+    final List<ChatMessage> currentMessages = messages.isNotEmpty
+        ? messages
+        : await _chatRepository.getMessages(conversation.id);
+    if (currentMessages.isNotEmpty) {
+      return;
+    }
+
+    final String? currentModel = conversation.selectedModelId?.trim();
+    final String? currentProvider = conversation.providerId?.trim();
+    if ((currentModel?.isNotEmpty ?? false) &&
+        (currentProvider?.isNotEmpty ?? false)) {
+      return;
+    }
+
+    final String? defaultModel = _settingsController.settings.selectedModelId
+        ?.trim();
+    final String? detectedProviderId = _settingsController.detectedProvider?.id;
+    final String? selectedProviderId = _settingsController
+        .settings
+        .selectedProviderId
+        ?.trim();
+
+    final String? nextModel = (currentModel != null && currentModel.isNotEmpty)
+        ? currentModel
+        : ((defaultModel != null && defaultModel.isNotEmpty)
+              ? defaultModel
+              : null);
+    final String? nextProvider =
+        (currentProvider != null && currentProvider.isNotEmpty)
+        ? currentProvider
+        : ((detectedProviderId != null && detectedProviderId.isNotEmpty)
+              ? detectedProviderId
+              : ((selectedProviderId != null && selectedProviderId.isNotEmpty)
+                    ? selectedProviderId
+                    : null));
+
+    if ((nextModel == null || nextModel.isEmpty) &&
+        (nextProvider == null || nextProvider.isEmpty)) {
+      return;
+    }
+
+    final Conversation updated = conversation.copyWith(
+      selectedModelId: nextModel,
+      providerId: nextProvider,
+      updatedAt: DateTime.now(),
+    );
+    await _chatRepository.upsertConversation(updated);
+    currentConversation = updated;
+    await _reloadConversations();
+    notifyListeners();
   }
 
   Future<void> selectConversation(String conversationId) async {
@@ -183,6 +246,7 @@ class ChatController extends ChangeNotifier {
 
       await _reloadConversations();
       await selectConversation(baseConversation.id);
+      await _afterAssistantResponseCompleted();
     } catch (_) {
       error = 'Failed to send message';
       isSending = false;
@@ -283,6 +347,7 @@ class ChatController extends ChangeNotifier {
 
       await _reloadConversations();
       await selectConversation(conversation.id);
+      await _afterAssistantResponseCompleted();
     } catch (_) {
       error = 'Failed to regenerate response';
       isSending = false;
@@ -348,6 +413,7 @@ class ChatController extends ChangeNotifier {
 
       await _reloadConversations();
       await selectConversation(conversation.id);
+      await _afterAssistantResponseCompleted();
     } catch (_) {
       error = 'Failed to edit and resend message';
       isSending = false;
@@ -690,6 +756,7 @@ class ChatController extends ChangeNotifier {
       isStreaming = false;
       streamingMessageId = null;
       _stopStreamingRequested = false;
+      notifyListeners();
     }
   }
 
@@ -938,6 +1005,14 @@ class ChatController extends ChangeNotifier {
     }
 
     await doneCompleter.future;
+  }
+
+  Future<void> _afterAssistantResponseCompleted() async {
+    try {
+      await _onAssistantResponseCompleted?.call();
+    } catch (_) {
+      // Balance refresh failures must not break chat.
+    }
   }
 
   void _replaceMessageInMemory(ChatMessage updatedMessage) {

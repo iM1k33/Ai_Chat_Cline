@@ -5,6 +5,8 @@ import 'package:aichatcline/core/utils/app_logger.dart';
 import 'package:aichatcline/features/export/services/export_service.dart';
 import 'package:aichatcline/features/export/services/share_service.dart';
 import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
+import 'package:aichatcline/features/statistics/models/account_balance.dart';
+import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
@@ -26,6 +28,8 @@ class ChatScreen extends StatefulWidget {
     this.onOpenStatistics,
     this.onOpenGraphs,
     this.onShowBalance,
+    this.balance,
+    this.isBalanceLoading = false,
   });
 
   final ChatController controller;
@@ -40,12 +44,39 @@ class ChatScreen extends StatefulWidget {
   final VoidCallback? onOpenStatistics;
   final VoidCallback? onOpenGraphs;
   final Future<void> Function()? onShowBalance;
+  final AccountBalance? balance;
+  final bool isBalanceLoading;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  String _balanceBadgeText() {
+    return StatisticsController.formatBalanceBadgeText(widget.balance);
+  }
+
+  Widget _balanceBadge() {
+    final bool loading = widget.isBalanceLoading;
+    final String text = _balanceBadgeText();
+
+    return FilledButton.tonal(
+      onPressed: widget.onShowBalance,
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        visualDensity: VisualDensity.compact,
+        minimumSize: const Size(0, 32),
+      ),
+      child: loading
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
+  }
+
   late final TextEditingController _messageController;
   final DateFormat _conversationDateFormat = DateFormat('yyyy-MM-dd HH:mm');
 
@@ -599,11 +630,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                           .controller
                                           .regenerateLastAssistantResponse,
                               ),
-                              IconButton(
-                                tooltip: 'Balance',
-                                icon: const Icon(Icons.account_balance_wallet),
-                                onPressed: widget.onShowBalance,
-                              ),
+                              _balanceBadge(),
                               const Spacer(),
                               IconButton(
                                 tooltip: 'Export conversation',
@@ -702,11 +729,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ? null
                           : widget.controller.regenerateLastAssistantResponse,
                     ),
-                    IconButton(
-                      tooltip: 'Balance',
-                      icon: const Icon(Icons.account_balance_wallet),
-                      onPressed: widget.onShowBalance,
-                    ),
+                    _balanceBadge(),
                     const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Export conversation',

@@ -29,6 +29,29 @@ class StatisticsController extends ChangeNotifier {
   String? error;
   String? balanceError;
 
+  static String formatBalanceBadgeText(AccountBalance? balance) {
+    if (balance == null) {
+      return 'Balance';
+    }
+
+    final double? value = balance.balance;
+    final String currency = (balance.currencyCode ?? '').toUpperCase().trim();
+    if (value != null) {
+      final String amount = value.toStringAsFixed(2);
+      if (currency == 'RUB') {
+        return '₽$amount';
+      }
+      return '\$$amount';
+    }
+
+    if (balance.rawSummary.trim().isNotEmpty ||
+        (balance.subscriptionStatus?.trim().isNotEmpty ?? false)) {
+      return 'Balance';
+    }
+
+    return 'Balance';
+  }
+
   int get totalRequests => records.length;
 
   int get totalPromptTokens => records.fold<int>(

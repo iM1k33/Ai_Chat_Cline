@@ -54,6 +54,7 @@ class PinPad extends StatelessWidget {
 
   Widget _digitButton(String digit) {
     return FilledButton.tonal(
+      key: Key('pin_digit_$digit'),
       onPressed: enabled ? () => onDigit(digit) : null,
       child: Text(digit),
     );

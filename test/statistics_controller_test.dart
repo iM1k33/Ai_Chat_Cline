@@ -1,6 +1,7 @@
 import 'package:aichatcline/data/services/secure_storage_service.dart';
 import 'package:aichatcline/data/services/settings_storage_service.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
+import 'package:aichatcline/features/statistics/models/account_balance.dart';
 import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
@@ -75,5 +76,46 @@ void main() {
     expect(controller.totalTokensByModel['model-a'], 70);
     expect(controller.totalEstimatedCostUsd, closeTo(0.000070, 1e-12));
     expect(controller.totalEstimatedCostRub, closeTo(0.25, 1e-12));
+  });
+
+  test('balance badge text formats USD and RUB and fallback', () {
+    expect(
+      StatisticsController.formatBalanceBadgeText(
+        AccountBalance(
+          providerId: 'openrouter',
+          balance: 25.71,
+          currencyCode: 'USD',
+          rawSummary: '',
+          fetchedAt: DateTime.parse('2026-05-10T09:00:00Z'),
+        ),
+      ),
+      '\$25.71',
+    );
+
+    expect(
+      StatisticsController.formatBalanceBadgeText(
+        AccountBalance(
+          providerId: 'vsegpt',
+          balance: 25.71,
+          currencyCode: 'RUB',
+          rawSummary: '',
+          fetchedAt: DateTime.parse('2026-05-10T09:00:00Z'),
+        ),
+      ),
+      '₽25.71',
+    );
+
+    expect(
+      StatisticsController.formatBalanceBadgeText(
+        AccountBalance(
+          providerId: 'openrouter',
+          balance: null,
+          currencyCode: 'USD',
+          rawSummary: 'active subscription',
+          fetchedAt: DateTime.parse('2026-05-10T09:00:00Z'),
+        ),
+      ),
+      'Balance',
+    );
   });
 }

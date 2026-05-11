@@ -80,6 +80,9 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
       aiClient: _aiClient,
       statsRepository: _statsRepository,
       appLogger: _appLogger,
+      onAssistantResponseCompleted: () async {
+        await _statisticsController.loadAccountBalance();
+      },
     );
 
     _statisticsController = StatisticsController(
@@ -94,6 +97,24 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
 
     _settingsController.load();
     _chatController.load();
+
+    _settingsController.addListener(_handleSettingsChanged);
+  }
+
+  bool _wasSetupReady = false;
+
+  Future<void> _handleSettingsChanged() async {
+    final bool setupReady =
+        _settingsController.isApiKeyValidated &&
+        !_settingsController.isPinSetupRequired;
+
+    if (setupReady && !_wasSetupReady) {
+      _wasSetupReady = true;
+      await _chatController.ensureCurrentConversationHasDefaultModel();
+      return;
+    }
+
+    _wasSetupReady = setupReady;
   }
 
   @override
@@ -117,6 +138,7 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _settingsController.removeListener(_handleSettingsChanged);
     _chatController.dispose();
     _modelCatalogController.dispose();
     _settingsController.dispose();
@@ -282,8 +304,15 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
               if (_settingsController.isLocked) {
                 return PinUnlockScreen(
                   remainingAttempts: _settingsController.remainingPinAttempts,
-                  onUnlock: (String pin) {
-                    return _settingsController.unlockWithPin(pin);
+                  onUnlock: (String pin) async {
+                    final bool ok = await _settingsController.unlockWithPin(
+                      pin,
+                    );
+                    if (ok) {
+                      await _chatController
+                          .ensureCurrentConversationHasDefaultModel();
+                    }
+                    return ok;
                   },
                   onResetApiKey: () {
                     return _settingsController.resetApiKeyAndPin();
@@ -291,18 +320,25 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
                 );
               }
 
-              return ChatScreen(
-                controller: _chatController,
-                modelCatalogController: _modelCatalogController,
-                exportService: _exportService,
-                shareService: _shareService,
-                providerName: _providerStatusName(),
-                appLogger: _appLogger,
-                selectedModelId: _selectedModelIdOrNull(),
-                onOpenSettings: () => _openSettings(context),
-                onOpenStatistics: () => _openStatistics(context),
-                onOpenGraphs: () => _openGraphs(context),
-                onShowBalance: () => _showBalanceFromChat(context),
+              return AnimatedBuilder(
+                animation: _statisticsController,
+                builder: (BuildContext context, _) {
+                  return ChatScreen(
+                    controller: _chatController,
+                    modelCatalogController: _modelCatalogController,
+                    exportService: _exportService,
+                    shareService: _shareService,
+                    providerName: _providerStatusName(),
+                    appLogger: _appLogger,
+                    selectedModelId: _selectedModelIdOrNull(),
+                    onOpenSettings: () => _openSettings(context),
+                    onOpenStatistics: () => _openStatistics(context),
+                    onOpenGraphs: () => _openGraphs(context),
+                    onShowBalance: () => _showBalanceFromChat(context),
+                    balance: _statisticsController.accountBalance,
+                    isBalanceLoading: _statisticsController.isLoadingBalance,
+                  );
+                },
               );
             },
           ),

@@ -211,11 +211,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _clearApiKeyWithPinFlow() async {
+    if (_revealBusy) {
+      return;
+    }
+    setState(() {
+      _revealBusy = true;
+    });
+
+    final bool? verified = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return _PinRevealDialog(
+          verifyPin: widget.controller.verifyPin,
+          title: 'Confirm PIN',
+          prompt: 'Enter your 4-digit PIN to clear API key',
+        );
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _revealBusy = false;
+    });
+
+    if (verified != true) {
+      return;
+    }
+
+    final bool confirmed = await _showClearApiKeyConfirmation();
+    if (!confirmed) {
+      return;
+    }
+
+    await widget.controller.clearApiKey(keepPin: true);
+    if (!mounted) {
+      return;
+    }
+
+    _apiKeyController.clear();
+    setState(() {
+      _showApiKey = false;
+    });
+  }
+
   Future<bool> _showClearApiKeyConfirmation() async {
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          key: const Key('confirm_clear_api_dialog'),
           title: const Text('Clear API key?'),
           content: const Text(
             'This will remove the saved API key and reset validation state. Chat history, statistics, and logs will be kept.',
@@ -278,19 +326,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(width: 8),
                 FilledButton.tonalIcon(
-                  onPressed: () async {
-                    final bool confirmed = await _showClearApiKeyConfirmation();
-                    if (!confirmed) {
-                      return;
-                    }
-                    await controller.clearApiKey(keepPin: true);
-                    _apiKeyController.clear();
-                    if (mounted) {
-                      setState(() {
-                        _showApiKey = false;
-                      });
-                    }
-                  },
+                  key: const Key('settings_clear_api_button'),
+                  onPressed: _clearApiKeyWithPinFlow,
                   icon: const Icon(Icons.clear),
                   label: const Text('Clear API key'),
                 ),
@@ -652,9 +689,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 class _PinRevealDialog extends StatefulWidget {
-  const _PinRevealDialog({required this.verifyPin});
+  const _PinRevealDialog({
+    required this.verifyPin,
+    this.title = 'Reveal API key',
+    this.prompt = 'Enter your 4-digit PIN',
+  });
 
   final Future<bool> Function(String pin) verifyPin;
+  final String title;
+  final String prompt;
 
   @override
   State<_PinRevealDialog> createState() => _PinRevealDialogState();
@@ -721,13 +764,13 @@ class _PinRevealDialogState extends State<_PinRevealDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Reveal API key'),
+      title: Text(widget.title),
       content: SizedBox(
         width: 320,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Text('Enter your 4-digit PIN'),
+            Text(widget.prompt),
             const SizedBox(height: 12),
             Text('●' * _pin.length),
             if (_error != null) ...<Widget>[
