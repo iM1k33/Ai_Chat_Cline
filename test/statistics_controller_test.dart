@@ -1,4 +1,8 @@
+import 'package:aichatcline/data/services/secure_storage_service.dart';
+import 'package:aichatcline/data/services/settings_storage_service.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
+import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
+import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -55,6 +59,12 @@ void main() {
 
     final StatisticsController controller = StatisticsController(
       statsRepository: statsRepository,
+      settingsController: SettingsController(
+        settingsStorage: const SettingsStorageService(),
+        secureStorage: SecureStorageService(),
+        aiClient: OpenAICompatibleClient(),
+      ),
+      aiClient: OpenAICompatibleClient(),
     );
 
     await controller.load();

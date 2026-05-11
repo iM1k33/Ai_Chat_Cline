@@ -1,16 +1,33 @@
 import 'package:aichatcline/data/repositories/stats_repository.dart';
+import 'package:aichatcline/core/utils/app_logger.dart';
+import 'package:aichatcline/features/providers/services/openai_compatible_client.dart';
+import 'package:aichatcline/features/settings/state/settings_controller.dart';
+import 'package:aichatcline/features/statistics/models/account_balance.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
 import 'package:flutter/foundation.dart';
 
 class StatisticsController extends ChangeNotifier {
-  StatisticsController({required StatsRepository statsRepository})
-    : _statsRepository = statsRepository;
+  StatisticsController({
+    required StatsRepository statsRepository,
+    required SettingsController settingsController,
+    required OpenAICompatibleClient aiClient,
+    AppLogger? appLogger,
+  }) : _statsRepository = statsRepository,
+       _settingsController = settingsController,
+       _aiClient = aiClient,
+       _appLogger = appLogger;
 
   final StatsRepository _statsRepository;
+  final SettingsController _settingsController;
+  final OpenAICompatibleClient _aiClient;
+  final AppLogger? _appLogger;
 
   List<UsageRecord> records = <UsageRecord>[];
+  AccountBalance? accountBalance;
   bool isLoading = false;
+  bool isLoadingBalance = false;
   String? error;
+  String? balanceError;
 
   int get totalRequests => records.length;
 
@@ -24,8 +41,10 @@ class StatisticsController extends ChangeNotifier {
     (int sum, UsageRecord record) => sum + record.completionTokens,
   );
 
-  int get totalTokens =>
-      records.fold<int>(0, (int sum, UsageRecord record) => sum + record.totalTokens);
+  int get totalTokens => records.fold<int>(
+    0,
+    (int sum, UsageRecord record) => sum + record.totalTokens,
+  );
 
   double get totalEstimatedCostUsd => records.fold<double>(
     0,
@@ -85,7 +104,11 @@ class StatisticsController extends ChangeNotifier {
   Map<String, int> get requestCountByModel {
     final Map<String, int> result = <String, int>{};
     for (final UsageRecord record in records) {
-      result.update(record.modelId, (int value) => value + 1, ifAbsent: () => 1);
+      result.update(
+        record.modelId,
+        (int value) => value + 1,
+        ifAbsent: () => 1,
+      );
     }
     return result;
   }
@@ -119,6 +142,54 @@ class StatisticsController extends ChangeNotifier {
 
   Future<void> refresh() async {
     await load();
+  }
+
+  Future<void> loadAccountBalance() async {
+    isLoadingBalance = true;
+    balanceError = null;
+    notifyListeners();
+
+    try {
+      await _appLogger?.logInfo(
+        category: 'balance',
+        message: 'Balance check started',
+      );
+
+      final String apiKey = _settingsController.apiKey.trim();
+      if (apiKey.isEmpty || !_settingsController.isApiKeyValidated) {
+        throw Exception('Validated API key is required');
+      }
+
+      final provider = _settingsController.effectiveProvider();
+      if (provider == null) {
+        throw Exception('Provider is not configured');
+      }
+
+      accountBalance = await _aiClient.fetchAccountBalance(
+        provider: provider,
+        apiKey: apiKey,
+      );
+
+      await _appLogger?.logInfo(
+        category: 'balance',
+        message: 'Balance check succeeded',
+        metadata: <String, dynamic>{'providerId': provider.id},
+      );
+    } catch (e) {
+      accountBalance = null;
+      balanceError = e.toString().replaceFirst('Exception: ', '').trim();
+      if (balanceError == null || balanceError!.isEmpty) {
+        balanceError = 'Failed to load account balance';
+      }
+      await _appLogger?.logWarning(
+        category: 'balance',
+        message: 'Balance check failed',
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
+    } finally {
+      isLoadingBalance = false;
+      notifyListeners();
+    }
   }
 
   Future<void> deleteAllStatistics() async {

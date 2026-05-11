@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'package:aichatcline/features/statistics/models/account_balance.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
 
@@ -82,6 +83,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 onPressed: controller.isLoading ? null : controller.refresh,
               ),
               IconButton(
+                tooltip: 'Balance',
+                icon: const Icon(Icons.account_balance_wallet_outlined),
+                onPressed: controller.isLoadingBalance
+                    ? null
+                    : controller.loadAccountBalance,
+              ),
+              IconButton(
                 tooltip: 'Delete all statistics',
                 icon: const Icon(Icons.delete_sweep_outlined),
                 onPressed: controller.isLoading
@@ -119,6 +127,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             ),
                           ),
                         ),
+                      _SectionCard(
+                        title: 'Account balance',
+                        child: _BalanceSection(controller: controller),
+                      ),
+                      const SizedBox(height: 12),
                       _SectionCard(
                         title: 'Summary',
                         child: Column(
@@ -287,6 +300,70 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _BalanceSection extends StatelessWidget {
+  const _BalanceSection({required this.controller});
+
+  final StatisticsController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    if (controller.isLoadingBalance) {
+      return const Row(
+        children: <Widget>[
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 8),
+          Text('Loading balance...'),
+        ],
+      );
+    }
+
+    if (controller.balanceError != null) {
+      return Text(
+        controller.balanceError!,
+        style: TextStyle(color: Theme.of(context).colorScheme.error),
+      );
+    }
+
+    final AccountBalance? balance = controller.accountBalance;
+    if (balance == null) {
+      return const Text('Press Balance to check current account status.');
+    }
+
+    final String balanceText = balance.balance == null
+        ? '-'
+        : balance.balance!.toStringAsFixed(6);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _StatRow(label: 'Provider', value: balance.providerId),
+        _StatRow(
+          label: 'Fetched at',
+          value: DateFormat('yyyy-MM-dd HH:mm:ss').format(balance.fetchedAt),
+        ),
+        _StatRow(label: 'Balance', value: balanceText),
+        _StatRow(label: 'Currency', value: balance.currencyCode ?? '-'),
+        _StatRow(
+          label: 'Status',
+          value: (balance.subscriptionStatus?.trim().isNotEmpty ?? false)
+              ? balance.subscriptionStatus!
+              : '-',
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Raw summary: ${balance.rawSummary}',
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 }

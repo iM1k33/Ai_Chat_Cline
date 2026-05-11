@@ -7,6 +7,7 @@ import 'package:aichatcline/features/providers/models/ai_model.dart';
 import 'package:aichatcline/features/providers/models/ai_provider.dart';
 import 'package:aichatcline/features/providers/models/chat_completion_request.dart';
 import 'package:aichatcline/features/providers/models/chat_completion_response.dart';
+import 'package:aichatcline/features/statistics/models/account_balance.dart';
 import 'package:http/http.dart' as http;
 
 class OpenAICompatibleClient {
@@ -59,7 +60,9 @@ class OpenAICompatibleClient {
 
       final Object? data = decoded['data'];
       if (data is! List<dynamic>) {
-        throw const AppException('Models response does not contain a valid data list');
+        throw const AppException(
+          'Models response does not contain a valid data list',
+        );
       }
 
       final List<AIModel> models = <AIModel>[];
@@ -73,7 +76,8 @@ class OpenAICompatibleClient {
           continue;
         }
 
-        final String name = ((item['name'] as String?)?.trim().isNotEmpty ?? false)
+        final String name =
+            ((item['name'] as String?)?.trim().isNotEmpty ?? false)
             ? (item['name'] as String).trim()
             : id;
 
@@ -82,11 +86,12 @@ class OpenAICompatibleClient {
             topProviderRaw is Map<String, dynamic> ? topProviderRaw : null;
 
         final Object? pricingRaw = item['pricing'];
-        final Map<String, dynamic>? pricing =
-            pricingRaw is Map<String, dynamic> ? pricingRaw : null;
+        final Map<String, dynamic>? pricing = pricingRaw is Map<String, dynamic>
+            ? pricingRaw
+            : null;
 
-        final Object? contextLengthRaw = item['context_length'] ??
-            topProvider?['context_length'];
+        final Object? contextLengthRaw =
+            item['context_length'] ?? topProvider?['context_length'];
 
         final Object? supportsStreamingRaw =
             item['supports_streaming'] ?? item['streaming'];
@@ -100,7 +105,9 @@ class OpenAICompatibleClient {
             contextLength: _parseInt(contextLengthRaw),
             promptPrice: _parseDouble(pricing?['prompt']),
             completionPrice: _parseDouble(pricing?['completion']),
-            currencyCode: provider.type == AIProviderType.vsegpt ? 'RUB' : 'USD',
+            currencyCode: provider.type == AIProviderType.vsegpt
+                ? 'RUB'
+                : 'USD',
             supportsStreaming: supportsStreamingRaw is bool
                 ? supportsStreamingRaw
                 : true,
@@ -110,11 +117,7 @@ class OpenAICompatibleClient {
 
       return models;
     } on TimeoutException catch (e) {
-      throw AppException(
-        'Models request timed out',
-        code: 'timeout',
-        cause: e,
-      );
+      throw AppException('Models request timed out', code: 'timeout', cause: e);
     } on FormatException catch (e) {
       throw AppException(
         'Invalid models response format',
@@ -237,78 +240,76 @@ class OpenAICompatibleClient {
     final StreamController<ChatCompletionStreamChunk> controller =
         StreamController<ChatCompletionStreamChunk>();
 
-    unawaited(
-      () async {
-        try {
-          final http.StreamedResponse response = await _httpClient
-              .send(streamedRequest)
-              .timeout(const Duration(seconds: 60));
+    unawaited(() async {
+      try {
+        final http.StreamedResponse response = await _httpClient
+            .send(streamedRequest)
+            .timeout(const Duration(seconds: 60));
 
-          if (response.statusCode < 200 || response.statusCode > 299) {
-            final String errorBody = await response.stream.bytesToString();
-            throw AppException(
-              'Chat completion stream request failed: HTTP ${response.statusCode}. ${_bodySnippet(errorBody)}',
-              code: 'http_${response.statusCode}',
+        if (response.statusCode < 200 || response.statusCode > 299) {
+          final String errorBody = await response.stream.bytesToString();
+          throw AppException(
+            'Chat completion stream request failed: HTTP ${response.statusCode}. ${_bodySnippet(errorBody)}',
+            code: 'http_${response.statusCode}',
+          );
+        }
+
+        final Stream<String> lines = response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter());
+
+        final StringBuffer eventDataBuffer = StringBuffer();
+
+        await for (final String rawLine in lines) {
+          final String line = rawLine.trimRight();
+          if (line.isEmpty) {
+            _emitStreamChunkFromEventData(
+              eventDataBuffer.toString(),
+              controller,
             );
+            eventDataBuffer.clear();
+            continue;
           }
 
-          final Stream<String> lines = response.stream
-              .transform(utf8.decoder)
-              .transform(const LineSplitter());
-
-          final StringBuffer eventDataBuffer = StringBuffer();
-
-          await for (final String rawLine in lines) {
-            final String line = rawLine.trimRight();
-            if (line.isEmpty) {
-              _emitStreamChunkFromEventData(
-                eventDataBuffer.toString(),
-                controller,
-              );
-              eventDataBuffer.clear();
-              continue;
-            }
-
-            if (line.startsWith('data:')) {
-              eventDataBuffer.writeln(line.substring(5).trimLeft());
-            }
-          }
-
-          _emitStreamChunkFromEventData(eventDataBuffer.toString(), controller);
-
-          if (!controller.isClosed) {
-            await controller.close();
-          }
-        } on TimeoutException catch (e) {
-          if (!controller.isClosed) {
-            controller.addError(
-              AppException(
-                'Chat completion stream request timed out',
-                code: 'timeout',
-                cause: e,
-              ),
-            );
-            await controller.close();
-          }
-        } on AppException catch (e) {
-          if (!controller.isClosed) {
-            controller.addError(e);
-            await controller.close();
-          }
-        } catch (e) {
-          if (!controller.isClosed) {
-            controller.addError(
-              AppException(
-                'Failed to create chat completion stream request',
-                code: 'request_failed',
-                cause: e,
-              ),
-            );
-            await controller.close();
+          if (line.startsWith('data:')) {
+            eventDataBuffer.writeln(line.substring(5).trimLeft());
           }
         }
-      }(),
-    );
+
+        _emitStreamChunkFromEventData(eventDataBuffer.toString(), controller);
+
+        if (!controller.isClosed) {
+          await controller.close();
+        }
+      } on TimeoutException catch (e) {
+        if (!controller.isClosed) {
+          controller.addError(
+            AppException(
+              'Chat completion stream request timed out',
+              code: 'timeout',
+              cause: e,
+            ),
+          );
+          await controller.close();
+        }
+      } on AppException catch (e) {
+        if (!controller.isClosed) {
+          controller.addError(e);
+          await controller.close();
+        }
+      } catch (e) {
+        if (!controller.isClosed) {
+          controller.addError(
+            AppException(
+              'Failed to create chat completion stream request',
+              code: 'request_failed',
+              cause: e,
+            ),
+          );
+          await controller.close();
+        }
+      }
+    }());
 
     return controller.stream;
   }
@@ -339,6 +340,105 @@ class OpenAICompatibleClient {
           'Custom provider validation is not supported yet',
           code: 'validation_failed',
         );
+    }
+  }
+
+  Future<AccountBalance> fetchAccountBalance({
+    required AIProvider provider,
+    required String apiKey,
+  }) async {
+    final String trimmedKey = apiKey.trim();
+    if (trimmedKey.isEmpty) {
+      throw const AppException('API key is required');
+    }
+
+    final String baseUrl = provider.baseUrl.trim();
+    if (baseUrl.isEmpty) {
+      throw const AppException('Provider base URL is required');
+    }
+
+    final (String endpoint, String currency) = switch (provider.type) {
+      AIProviderType.openRouter => ('/credits', 'USD'),
+      AIProviderType.vsegpt => ('/balance', 'RUB'),
+      AIProviderType.custom => ('', ''),
+    };
+
+    if (provider.type == AIProviderType.custom) {
+      throw const AppException(
+        'Balance check is not supported for custom provider',
+      );
+    }
+
+    final Uri uri = Uri.parse('$baseUrl$endpoint');
+    final Map<String, String> headers = <String, String>{
+      'Authorization': 'Bearer $trimmedKey',
+      'Accept': 'application/json',
+    };
+
+    if (provider.type == AIProviderType.openRouter) {
+      headers['HTTP-Referer'] = 'https://localhost';
+      headers['X-Title'] = 'AI Chat';
+    }
+
+    try {
+      final http.Response response = await _httpClient
+          .get(uri, headers: headers)
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode < 200 || response.statusCode > 299) {
+        throw AppException(
+          'Balance check failed: HTTP ${response.statusCode}. ${_bodySnippet(response.body)}',
+          code: 'http_${response.statusCode}',
+        );
+      }
+
+      final Object? decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw const AppException('Invalid balance response format');
+      }
+
+      final double? parsedBalance = _firstDouble(decoded, <String>[
+        'balance',
+        'credits',
+        'total_credits',
+        'amount',
+        'available',
+      ]);
+      final String? status = _firstString(decoded, <String>[
+        'subscription_status',
+        'subscription',
+        'status',
+        'plan',
+      ]);
+
+      return AccountBalance(
+        providerId: provider.id,
+        fetchedAt: DateTime.now(),
+        balance: parsedBalance,
+        currencyCode: currency,
+        subscriptionStatus: status,
+        rawSummary: _bodySnippet(response.body),
+      );
+    } on TimeoutException catch (e) {
+      throw AppException(
+        'Balance request timed out',
+        code: 'timeout',
+        cause: e,
+      );
+    } on FormatException catch (e) {
+      throw AppException(
+        'Invalid balance response format',
+        code: 'invalid_response',
+        cause: e,
+      );
+    } on AppException {
+      rethrow;
+    } catch (e) {
+      throw AppException(
+        'Failed to fetch account balance',
+        code: 'request_failed',
+        cause: e,
+      );
     }
   }
 
@@ -509,9 +609,7 @@ class OpenAICompatibleClient {
     }
 
     if (eventData == '[DONE]') {
-      controller.add(
-        const ChatCompletionStreamChunk(delta: '', isDone: true),
-      );
+      controller.add(const ChatCompletionStreamChunk(delta: '', isDone: true));
       return;
     }
 
@@ -690,6 +788,57 @@ class OpenAICompatibleClient {
     }
     if (value is String) {
       return double.tryParse(value.trim());
+    }
+    return null;
+  }
+
+  double? _firstDouble(Map<String, dynamic> json, List<String> keys) {
+    for (final String key in keys) {
+      final Object? value = json[key];
+      final double? parsed = _parseDouble(value);
+      if (parsed != null) {
+        return parsed;
+      }
+      if (value is Map<String, dynamic>) {
+        final double? nested = _firstDouble(value, keys);
+        if (nested != null) {
+          return nested;
+        }
+      }
+    }
+
+    for (final Object? value in json.values) {
+      if (value is Map<String, dynamic>) {
+        final double? nested = _firstDouble(value, keys);
+        if (nested != null) {
+          return nested;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _firstString(Map<String, dynamic> json, List<String> keys) {
+    for (final String key in keys) {
+      final Object? value = json[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+      if (value is Map<String, dynamic>) {
+        final String? nested = _firstString(value, keys);
+        if (nested != null) {
+          return nested;
+        }
+      }
+    }
+
+    for (final Object? value in json.values) {
+      if (value is Map<String, dynamic>) {
+        final String? nested = _firstString(value, keys);
+        if (nested != null) {
+          return nested;
+        }
+      }
     }
     return null;
   }

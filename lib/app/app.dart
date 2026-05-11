@@ -83,6 +83,9 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
 
     _statisticsController = StatisticsController(
       statsRepository: _statsRepository,
+      settingsController: _settingsController,
+      aiClient: _aiClient,
+      appLogger: _appLogger,
     );
 
     _exportService = const ExportService();
