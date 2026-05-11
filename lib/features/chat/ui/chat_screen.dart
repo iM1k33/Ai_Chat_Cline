@@ -177,12 +177,12 @@ class _ChatScreenState extends State<ChatScreen> {
         selectedFormat,
       );
 
-      final file = await widget.shareService.saveExportFileWithPicker(
+      final result = await widget.shareService.saveExportFileWithPicker(
         fileName: fileName,
         content: content,
       );
 
-      if (file == null) {
+      if (result.status == ExportShareStatus.cancelled) {
         if (!mounted) {
           return;
         }
@@ -203,7 +203,8 @@ class _ChatScreenState extends State<ChatScreen> {
           metadata: <String, dynamic>{
             'conversationId': conversation.id,
             'format': selectedFormat.name,
-            'path': file.path,
+            if (result.file != null) 'path': result.file!.path,
+            'shareSheet': result.usedShareSheet,
           },
         );
       }
@@ -212,7 +213,9 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      await _showExportSavedDialog(file.path);
+      if (!result.usedShareSheet && result.file != null) {
+        await _showExportSavedDialog(result.file!.path);
+      }
     } catch (e) {
       if (!mounted) {
         return;
@@ -235,9 +238,9 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to export conversation.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
     }
   }
 

@@ -20,7 +20,6 @@ import 'package:aichatcline/features/settings/ui/pin_setup_screen.dart';
 import 'package:aichatcline/features/settings/ui/pin_unlock_screen.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
-import 'package:aichatcline/features/statistics/ui/graph_screen.dart';
 import 'package:aichatcline/features/statistics/ui/statistics_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -154,15 +153,6 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
     );
   }
 
-  void _openGraphs(BuildContext context) {
-    _statisticsController.refresh();
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => GraphScreen(controller: _statisticsController),
-      ),
-    );
-  }
-
   ThemeMode _resolveThemeMode(ThemeModeOption value) {
     return switch (value) {
       ThemeModeOption.system => ThemeMode.system,
@@ -248,7 +238,6 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
                 selectedModelId: _selectedModelIdOrNull(),
                 onOpenSettings: () => _openSettings(context),
                 onOpenStatistics: () => _openStatistics(context),
-                onOpenGraphs: () => _openGraphs(context),
               );
             },
           ),

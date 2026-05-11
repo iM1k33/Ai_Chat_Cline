@@ -124,7 +124,7 @@ class _LogsScreenState extends State<LogsScreen> {
     final String fileName =
         'logs_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.json';
 
-    final file = await widget.shareService.saveExportFileWithPicker(
+    final result = await widget.shareService.saveExportFileWithPicker(
       fileName: fileName,
       content: content,
     );
@@ -133,16 +133,26 @@ class _LogsScreenState extends State<LogsScreen> {
       return;
     }
 
-    if (file == null) {
+    if (result.status == ExportShareStatus.cancelled) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Export cancelled')));
       return;
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Logs exported: ${file.path}')));
+    if (result.usedShareSheet) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Logs shared')));
+      return;
+    }
+
+    final String? path = result.file?.path;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(path == null ? 'Logs exported' : 'Logs exported: $path'),
+      ),
+    );
   }
 
   String _compactMetadata(Map<String, dynamic> metadata) {
