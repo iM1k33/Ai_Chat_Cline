@@ -5,6 +5,10 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'dart:convert';
+
+import 'package:aichatcline/data/services/secure_storage_service.dart';
+import 'package:aichatcline/data/services/settings_storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -28,5 +32,54 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Validate / Continue'), findsOneWidget);
+  });
+
+  testWidgets('PIN setup gate renders after validated API key with no PIN', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      SettingsStorageService.appSettingsKey: jsonEncode(<String, dynamic>{
+        'selectedProviderId': 'openrouter',
+        'selectedModelId': 'openrouter/free',
+        'baseUrl': 'https://openrouter.ai/api/v1',
+        'systemPrompt': '',
+        'themeMode': 'system',
+        'locale': 'system',
+        'includeMessageContentInLogs': false,
+        'modelParameters': <String, dynamic>{},
+        'isApiKeyValidated': true,
+      }),
+      SecureStorageService.apiKeyKey: 'sk-or-v1-test-key',
+    });
+
+    await tester.pumpWidget(const AIChatApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Set 4-digit PIN'), findsOneWidget);
+  });
+
+  testWidgets('PIN unlock gate renders when validated API key and PIN exist', (
+    WidgetTester tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      SettingsStorageService.appSettingsKey: jsonEncode(<String, dynamic>{
+        'selectedProviderId': 'openrouter',
+        'selectedModelId': 'openrouter/free',
+        'baseUrl': 'https://openrouter.ai/api/v1',
+        'systemPrompt': '',
+        'themeMode': 'system',
+        'locale': 'system',
+        'includeMessageContentInLogs': false,
+        'modelParameters': <String, dynamic>{},
+        'isApiKeyValidated': true,
+      }),
+      SecureStorageService.apiKeyKey: 'sk-or-v1-test-key',
+      SecureStorageService.pinKey: '1234',
+    });
+
+    await tester.pumpWidget(const AIChatApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unlock app'), findsOneWidget);
   });
 }

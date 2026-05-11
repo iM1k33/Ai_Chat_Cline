@@ -85,8 +85,10 @@ class ChatController extends ChangeNotifier {
   Future<void> createNewConversation() async {
     try {
       final DateTime now = DateTime.now();
-      final String? selectedModelId =
-          _settingsController.settings.selectedModelId?.trim();
+      final String? selectedModelId = _settingsController
+          .settings
+          .selectedModelId
+          ?.trim();
       final String? resolvedProviderId =
           _settingsController.detectedProvider?.id ??
           _settingsController.settings.selectedProviderId?.trim();
@@ -95,12 +97,10 @@ class ChatController extends ChangeNotifier {
         title: 'New chat',
         createdAt: now,
         updatedAt: now,
-        selectedModelId:
-            (selectedModelId == null || selectedModelId.isEmpty)
+        selectedModelId: (selectedModelId == null || selectedModelId.isEmpty)
             ? null
             : selectedModelId,
-        providerId:
-            (resolvedProviderId == null || resolvedProviderId.isEmpty)
+        providerId: (resolvedProviderId == null || resolvedProviderId.isEmpty)
             ? null
             : resolvedProviderId,
         systemPrompt: null,
@@ -226,9 +226,8 @@ class ChatController extends ChangeNotifier {
     }
 
     try {
-      final List<ChatMessage> currentMessages = await _chatRepository.getMessages(
-        conversation.id,
-      );
+      final List<ChatMessage> currentMessages = await _chatRepository
+          .getMessages(conversation.id);
 
       int assistantIndex = -1;
       for (int i = currentMessages.length - 1; i >= 0; i--) {
@@ -269,9 +268,11 @@ class ChatController extends ChangeNotifier {
       notifyListeners();
 
       final List<ChatMessage> historyUpToUser = refreshed
-          .where((ChatMessage message) =>
-              message.createdAt.isBefore(lastAssistant.createdAt) ||
-              message.id == currentMessages[userIndex].id)
+          .where(
+            (ChatMessage message) =>
+                message.createdAt.isBefore(lastAssistant.createdAt) ||
+                message.id == currentMessages[userIndex].id,
+          )
           .toList();
 
       await _sendAssistantCompletion(
@@ -309,9 +310,8 @@ class ChatController extends ChangeNotifier {
     }
 
     try {
-      final List<ChatMessage> currentMessages = await _chatRepository.getMessages(
-        conversation.id,
-      );
+      final List<ChatMessage> currentMessages = await _chatRepository
+          .getMessages(conversation.id);
 
       ChatMessage? latestUser;
       for (int i = currentMessages.length - 1; i >= 0; i--) {
@@ -531,7 +531,9 @@ class ChatController extends ChangeNotifier {
     final String? lastUserMessageSnippet = _lastUserMessageSnippet(
       completionMessages,
     );
-    final String? systemPromptSnippet = _systemPromptSnippet(completionMessages);
+    final String? systemPromptSnippet = _systemPromptSnippet(
+      completionMessages,
+    );
 
     final Map<String, dynamic> requestStartMetadata = <String, dynamic>{
       'providerId': provider.id,
@@ -574,11 +576,12 @@ class ChatController extends ChangeNotifier {
     final Stopwatch stopwatch = Stopwatch()..start();
 
     try {
-      final ChatCompletionResponse response = await _aiClient.createChatCompletion(
-        provider: provider,
-        apiKey: apiKey,
-        request: request,
-      );
+      final ChatCompletionResponse response = await _aiClient
+          .createChatCompletion(
+            provider: provider,
+            apiKey: apiKey,
+            request: request,
+          );
       stopwatch.stop();
 
       final String usageModelId = response.model ?? selectedModelId;
@@ -677,7 +680,9 @@ class ChatController extends ChangeNotifier {
           'errorType': e.runtimeType.toString(),
           'responseTimeMs': stopwatch.elapsedMilliseconds,
           if (_snippetEnabled)
-            'lastUserMessageSnippet': _lastUserMessageSnippet(completionMessages),
+            'lastUserMessageSnippet': _lastUserMessageSnippet(
+              completionMessages,
+            ),
         },
       );
     } finally {
@@ -847,7 +852,9 @@ class ChatController extends ChangeNotifier {
               'error': normalizedError,
               'responseTimeMs': responseTimeMs,
               if (_snippetEnabled)
-                'lastUserMessageSnippet': _lastUserMessageSnippet(request.messages),
+                'lastUserMessageSnippet': _lastUserMessageSnippet(
+                  request.messages,
+                ),
             },
           );
         }
@@ -869,8 +876,8 @@ class ChatController extends ChangeNotifier {
     _activeStreamFinalize = () => finalize();
 
     try {
-      final Stream<ChatCompletionStreamChunk> stream =
-          _aiClient.createChatCompletionStream(
+      final Stream<ChatCompletionStreamChunk> stream = _aiClient
+          .createChatCompletionStream(
             provider: provider,
             apiKey: apiKey,
             request: request,
@@ -955,16 +962,20 @@ class ChatController extends ChangeNotifier {
     return conversationModelId;
   }
 
-  AIProvider? _resolveProviderForCurrentConversation(Conversation conversation) {
+  AIProvider? _resolveProviderForCurrentConversation(
+    Conversation conversation,
+  ) {
     final String? conversationProviderId = conversation.providerId?.trim();
-    final AIProvider? fromConversation = _providerFromId(conversationProviderId);
+    final AIProvider? fromConversation = _providerFromId(
+      conversationProviderId,
+    );
     if (fromConversation != null) {
-      return fromConversation;
+      return _withSettingsBaseUrlIfPresent(fromConversation);
     }
 
-    final AIProvider? detected = _settingsController.detectedProvider;
-    if (detected != null) {
-      return detected;
+    final AIProvider? effective = _settingsController.effectiveProvider();
+    if (effective != null) {
+      return effective;
     }
 
     return null;
@@ -977,6 +988,22 @@ class ChatController extends ChangeNotifier {
       'vsegpt' => AIProvider.vsegpt,
       _ => null,
     };
+  }
+
+  AIProvider _withSettingsBaseUrlIfPresent(AIProvider provider) {
+    final String? override = _settingsController.settings.baseUrl?.trim();
+    if (override == null || override.isEmpty) {
+      return provider;
+    }
+
+    return AIProvider(
+      id: provider.id,
+      name: provider.name,
+      type: provider.type,
+      baseUrl: override,
+      apiKeyPrefix: provider.apiKeyPrefix,
+      currencyCode: provider.currencyCode,
+    );
   }
 
   double _calculateEstimatedCost({
@@ -1070,7 +1097,8 @@ class ChatController extends ChangeNotifier {
       return null;
     }
 
-    return _appLogger?.buildMessageContentSnippet(value) ?? _shortSnippet(value);
+    return _appLogger?.buildMessageContentSnippet(value) ??
+        _shortSnippet(value);
   }
 
   String _shortSnippet(String value) {

@@ -16,6 +16,8 @@ import 'package:aichatcline/features/providers/services/openai_compatible_client
 import 'package:aichatcline/features/settings/state/app_settings.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
 import 'package:aichatcline/features/settings/ui/initial_setup_screen.dart';
+import 'package:aichatcline/features/settings/ui/pin_setup_screen.dart';
+import 'package:aichatcline/features/settings/ui/pin_unlock_screen.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
 import 'package:aichatcline/features/statistics/ui/statistics_screen.dart';
@@ -28,7 +30,7 @@ class AIChatApp extends StatefulWidget {
   State<AIChatApp> createState() => _AIChatAppState();
 }
 
-class _AIChatAppState extends State<AIChatApp> {
+class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
   late final AppDatabase _appDatabase;
   late final ChatRepository _chatRepository;
   late final LogsRepository _logsRepository;
@@ -41,10 +43,14 @@ class _AIChatAppState extends State<AIChatApp> {
   late final StatisticsController _statisticsController;
   late final ExportService _exportService;
   late final ShareService _shareService;
+  DateTime? _backgroundedAt;
+
+  static const Duration _inactivityLockDuration = Duration(minutes: 5);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _appDatabase = AppDatabase();
     _chatRepository = ChatRepository(appDatabase: _appDatabase);
@@ -87,7 +93,26 @@ class _AIChatAppState extends State<AIChatApp> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _backgroundedAt = DateTime.now();
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed && _backgroundedAt != null) {
+      final Duration elapsed = DateTime.now().difference(_backgroundedAt!);
+      _backgroundedAt = null;
+      if (elapsed >= _inactivityLockDuration) {
+        _settingsController.lockApp();
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chatController.dispose();
     _modelCatalogController.dispose();
     _settingsController.dispose();
@@ -121,9 +146,7 @@ class _AIChatAppState extends State<AIChatApp> {
 
   void _openStatistics(BuildContext context) {
     _statisticsController.refresh();
-    Navigator.of(
-      context,
-    ).push(
+    Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => StatisticsScreen(controller: _statisticsController),
       ),
@@ -139,7 +162,8 @@ class _AIChatAppState extends State<AIChatApp> {
   }
 
   String _providerStatusName() {
-    final String? selectedProviderId = _settingsController.settings.selectedProviderId;
+    final String? selectedProviderId =
+        _settingsController.settings.selectedProviderId;
     return switch (selectedProviderId) {
       'openrouter' => 'OpenRouter',
       'vsegpt' => 'VSEGPT',
@@ -180,8 +204,28 @@ class _AIChatAppState extends State<AIChatApp> {
                 );
               }
 
-              if (!_settingsController.isBasicApiConfigured) {
+              if (!_settingsController.isApiKeyValidated) {
                 return InitialSetupScreen(controller: _settingsController);
+              }
+
+              if (_settingsController.isPinSetupRequired) {
+                return PinSetupScreen(
+                  onPinReady: (String pin) async {
+                    await _settingsController.setupPin(pin);
+                  },
+                );
+              }
+
+              if (_settingsController.isLocked) {
+                return PinUnlockScreen(
+                  remainingAttempts: _settingsController.remainingPinAttempts,
+                  onUnlock: (String pin) {
+                    return _settingsController.unlockWithPin(pin);
+                  },
+                  onResetApiKey: () {
+                    return _settingsController.resetApiKeyAndPin();
+                  },
+                );
               }
 
               return ChatScreen(

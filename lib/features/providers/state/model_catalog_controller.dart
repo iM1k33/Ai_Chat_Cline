@@ -71,7 +71,7 @@ class ModelCatalogController extends ChangeNotifier {
       return;
     }
 
-    final AIProvider? provider = _settingsController.detectedProvider;
+    final AIProvider? provider = _settingsController.effectiveProvider();
     if (provider == null) {
       error = 'Provider is not configured.';
       notifyListeners();
@@ -104,10 +104,14 @@ class ModelCatalogController extends ChangeNotifier {
       models = fetched;
       lastLoadedAt = DateTime.now();
 
-      final String? selectedModelId = _settingsController.settings.selectedModelId
+      final String? selectedModelId = _settingsController
+          .settings
+          .selectedModelId
           ?.trim();
       if (selectedModelId != null && selectedModelId.isNotEmpty) {
-        final bool exists = models.any((AIModel model) => model.id == selectedModelId);
+        final bool exists = models.any(
+          (AIModel model) => model.id == selectedModelId,
+        );
         if (!exists) {
           error = 'Previously selected model is not in the loaded list.';
         }

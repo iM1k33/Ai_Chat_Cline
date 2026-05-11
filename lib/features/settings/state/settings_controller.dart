@@ -30,13 +30,19 @@ class SettingsController extends ChangeNotifier {
   AIProvider? detectedProvider;
   bool isLoading = false;
   bool isValidatingApiKey = false;
+  bool isUnlocked = false;
+  bool isPinSetupRequired = false;
+  int remainingPinAttempts = 9;
   String? error;
 
   bool get hasApiKey => apiKey.trim().isNotEmpty;
   bool get hasRecognizedProvider => detectedProvider != null;
   bool get isApiKeyValidated => settings.isApiKeyValidated;
+  bool get isLocked => !isUnlocked;
   bool get isBasicApiConfigured =>
       hasApiKey && hasRecognizedProvider && isApiKeyValidated;
+
+  static const int _maxPinAttempts = 9;
 
   Future<void> load() async {
     isLoading = true;
@@ -60,6 +66,23 @@ class SettingsController extends ChangeNotifier {
           settings = settings.copyWith(selectedProviderId: detectedId);
           await _settingsStorage.saveSettings(settings);
         }
+
+        if ((settings.baseUrl?.trim().isEmpty ?? true)) {
+          settings = settings.copyWith(baseUrl: detectedProvider!.baseUrl);
+          await _settingsStorage.saveSettings(settings);
+        }
+      }
+
+      if (!settings.isApiKeyValidated) {
+        isUnlocked = false;
+        isPinSetupRequired = false;
+        remainingPinAttempts = _maxPinAttempts;
+      } else {
+        final String? pin = await _secureStorage.readPin();
+        final bool hasPin = (pin?.trim().isNotEmpty ?? false);
+        isPinSetupRequired = !hasPin;
+        isUnlocked = !hasPin;
+        remainingPinAttempts = _maxPinAttempts;
       }
     } catch (e) {
       error = 'Failed to load settings';
@@ -74,6 +97,15 @@ class SettingsController extends ChangeNotifier {
     }
   }
 
+  Future<void> updateBaseUrl(String value) async {
+    final String trimmed = value.trim();
+    final String? next = trimmed.isEmpty ? null : trimmed;
+    await _saveSettings(
+      settings.copyWith(baseUrl: next),
+      errorMessage: 'Failed to save base URL',
+    );
+  }
+
   Future<void> saveApiKey(String value) async {
     error = null;
     try {
@@ -84,12 +116,17 @@ class SettingsController extends ChangeNotifier {
 
       settings = settings.copyWith(
         selectedProviderId: detectedProvider?.id,
+        baseUrl: detectedProvider?.baseUrl,
         isApiKeyValidated: false,
       );
       await _settingsStorage.saveSettings(settings);
 
       if (trimmed.isEmpty) {
         await _secureStorage.deleteApiKey();
+        await _secureStorage.deletePin();
+        isUnlocked = false;
+        isPinSetupRequired = false;
+        remainingPinAttempts = _maxPinAttempts;
       }
     } catch (e) {
       final String message = e.toString().trim();
@@ -106,7 +143,22 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> saveAndValidateInitialApiKey(String apiKeyInput) async {
-    final String trimmed = apiKeyInput.trim();
+    final AIProvider? detected = ProviderDetector.tryDetectByApiKey(
+      apiKeyInput,
+    );
+    final String fallbackBaseUrl = detected?.baseUrl ?? '';
+    await saveAndValidateInitialApiSetup(
+      apiKey: apiKeyInput,
+      baseUrl: fallbackBaseUrl,
+    );
+  }
+
+  Future<void> saveAndValidateInitialApiSetup({
+    required String apiKey,
+    required String baseUrl,
+  }) async {
+    final String trimmed = apiKey.trim();
+    final String trimmedBaseUrl = baseUrl.trim();
     error = null;
     isValidatingApiKey = true;
     notifyListeners();
@@ -124,10 +176,11 @@ class SettingsController extends ChangeNotifier {
       final AIProvider? provider = ProviderDetector.tryDetectByApiKey(trimmed);
       if (provider == null) {
         await _secureStorage.deleteApiKey();
-        apiKey = '';
+        this.apiKey = '';
         detectedProvider = null;
         settings = settings.copyWith(
           selectedProviderId: null,
+          baseUrl: null,
           isApiKeyValidated: false,
         );
         await _settingsStorage.saveSettings(settings);
@@ -136,16 +189,29 @@ class SettingsController extends ChangeNotifier {
         );
       }
 
-      await _aiClient.validateApiKey(provider: provider, apiKey: trimmed);
+      final AIProvider providerForValidation = _providerWithBaseUrl(
+        provider,
+        trimmedBaseUrl,
+      );
+
+      await _aiClient.validateApiKey(
+        provider: providerForValidation,
+        apiKey: trimmed,
+      );
 
       await _secureStorage.saveApiKey(trimmed);
       detectedProvider = provider;
-      apiKey = trimmed;
+      this.apiKey = trimmed;
       settings = settings.copyWith(
         selectedProviderId: provider.id,
+        baseUrl: trimmedBaseUrl.isEmpty ? provider.baseUrl : trimmedBaseUrl,
+        selectedModelId: _defaultModelForProvider(provider.id),
         isApiKeyValidated: true,
       );
       await _settingsStorage.saveSettings(settings);
+      isPinSetupRequired = true;
+      isUnlocked = false;
+      remainingPinAttempts = _maxPinAttempts;
       error = null;
 
       await _appLogger?.logInfo(
@@ -155,21 +221,26 @@ class SettingsController extends ChangeNotifier {
       );
     } catch (e) {
       await _secureStorage.deleteApiKey();
-      apiKey = '';
+      this.apiKey = '';
       detectedProvider = null;
       settings = settings.copyWith(
         selectedProviderId: null,
+        baseUrl: null,
         isApiKeyValidated: false,
       );
       await _settingsStorage.saveSettings(settings);
+      isPinSetupRequired = false;
+      isUnlocked = false;
+      remainingPinAttempts = _maxPinAttempts;
 
       if (e is AppException) {
         error = e.message;
       } else {
-        final String message = e.toString().replaceFirst('Exception: ', '').trim();
-        error = message.isEmpty
-            ? 'Failed to validate API key'
-            : message;
+        final String message = e
+            .toString()
+            .replaceFirst('Exception: ', '')
+            .trim();
+        error = message.isEmpty ? 'Failed to validate API key' : message;
       }
 
       await _appLogger?.logWarning(
@@ -187,7 +258,93 @@ class SettingsController extends ChangeNotifier {
   }
 
   Future<void> validateCurrentApiKey() async {
-    await saveAndValidateInitialApiKey(apiKey);
+    final String effectiveBaseUrl = settings.baseUrl?.trim().isNotEmpty == true
+        ? settings.baseUrl!.trim()
+        : (detectedProvider?.baseUrl ?? '');
+
+    await saveAndValidateInitialApiSetup(
+      apiKey: apiKey,
+      baseUrl: effectiveBaseUrl,
+    );
+  }
+
+  Future<void> setupPin(String pin) async {
+    await _secureStorage.savePin(pin);
+    isPinSetupRequired = false;
+    isUnlocked = true;
+    remainingPinAttempts = _maxPinAttempts;
+    notifyListeners();
+  }
+
+  Future<bool> unlockWithPin(String pin) async {
+    if (remainingPinAttempts <= 0) {
+      return false;
+    }
+
+    final String? storedPin = await _secureStorage.readPin();
+    final bool isCorrect = storedPin != null && storedPin == pin.trim();
+
+    if (isCorrect) {
+      isUnlocked = true;
+      remainingPinAttempts = _maxPinAttempts;
+      notifyListeners();
+      return true;
+    }
+
+    remainingPinAttempts = remainingPinAttempts > 0
+        ? remainingPinAttempts - 1
+        : 0;
+    isUnlocked = false;
+    notifyListeners();
+    return false;
+  }
+
+  Future<bool> verifyPin(String pin) async {
+    final String normalized = pin.trim();
+    if (normalized.length != 4) {
+      return false;
+    }
+    final String? storedPin = await _secureStorage.readPin();
+    return storedPin != null && storedPin == normalized;
+  }
+
+  Future<void> resetApiKeyAndPin() async {
+    error = null;
+    try {
+      await _secureStorage.deleteApiKey();
+      await _secureStorage.deletePin();
+
+      apiKey = '';
+      detectedProvider = null;
+      isValidatingApiKey = false;
+      isUnlocked = false;
+      isPinSetupRequired = false;
+      remainingPinAttempts = _maxPinAttempts;
+
+      settings = settings.copyWith(
+        selectedProviderId: null,
+        selectedModelId: null,
+        baseUrl: null,
+        isApiKeyValidated: false,
+      );
+      await _settingsStorage.saveSettings(settings);
+    } catch (e) {
+      error = 'Failed to reset API key';
+      await _appLogger?.logWarning(
+        category: 'settings',
+        message: 'Failed to reset API key and PIN',
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
+    }
+
+    notifyListeners();
+  }
+
+  void lockApp() {
+    if (settings.isApiKeyValidated) {
+      isUnlocked = false;
+      notifyListeners();
+    }
   }
 
   Future<void> updateSystemPrompt(String value) {
@@ -243,9 +400,13 @@ class SettingsController extends ChangeNotifier {
       await _settingsStorage.resetSettings();
       settings = AppSettings.defaults();
       await _secureStorage.deleteApiKey();
+      await _secureStorage.deletePin();
       apiKey = '';
       detectedProvider = null;
       isValidatingApiKey = false;
+      isUnlocked = false;
+      isPinSetupRequired = false;
+      remainingPinAttempts = _maxPinAttempts;
     } catch (e) {
       error = 'Failed to reset settings';
       await _appLogger?.logWarning(
@@ -256,6 +417,48 @@ class SettingsController extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  AIProvider? effectiveProvider() {
+    if (detectedProvider != null) {
+      return _providerWithBaseUrl(detectedProvider!, settings.baseUrl ?? '');
+    }
+
+    final String? selectedId = settings.selectedProviderId?.trim();
+    final AIProvider? base = switch (selectedId) {
+      'openrouter' => AIProvider.openRouter,
+      'vsegpt' => AIProvider.vsegpt,
+      _ => null,
+    };
+    if (base == null) {
+      return null;
+    }
+
+    return _providerWithBaseUrl(base, settings.baseUrl ?? '');
+  }
+
+  AIProvider _providerWithBaseUrl(AIProvider provider, String baseUrl) {
+    final String trimmedBaseUrl = baseUrl.trim();
+    if (trimmedBaseUrl.isEmpty) {
+      return provider;
+    }
+
+    return AIProvider(
+      id: provider.id,
+      name: provider.name,
+      type: provider.type,
+      baseUrl: trimmedBaseUrl,
+      apiKeyPrefix: provider.apiKeyPrefix,
+      currencyCode: provider.currencyCode,
+    );
+  }
+
+  String? _defaultModelForProvider(String providerId) {
+    return switch (providerId) {
+      'openrouter' => 'openrouter/free',
+      'vsegpt' => 'openai/gpt-3.5-turbo',
+      _ => null,
+    };
   }
 
   Future<void> _saveSettings(

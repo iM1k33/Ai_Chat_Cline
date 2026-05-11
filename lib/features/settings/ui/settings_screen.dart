@@ -3,6 +3,8 @@ import 'package:aichatcline/features/providers/models/model_parameters.dart';
 import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/settings/state/app_settings.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
+import 'package:aichatcline/features/settings/ui/widgets/pin_pad.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -23,6 +25,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _apiKeyController;
+  late final TextEditingController _baseUrlController;
   late final TextEditingController _modelIdController;
   late final TextEditingController _systemPromptController;
   late final TextEditingController _temperatureController;
@@ -33,6 +36,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _modelSearchController;
   late ThemeModeOption _selectedThemeMode;
   late LocaleOption _selectedLocale;
+  bool _revealBusy = false;
+  bool _showApiKey = false;
 
   @override
   void initState() {
@@ -40,6 +45,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final SettingsController controller = widget.controller;
 
     _apiKeyController = TextEditingController(text: controller.apiKey);
+    _baseUrlController = TextEditingController(
+      text: controller.settings.baseUrl ?? '',
+    );
     _modelIdController = TextEditingController(
       text: controller.settings.selectedModelId ?? '',
     );
@@ -74,6 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     widget.controller.removeListener(_syncControllersFromState);
     widget.modelCatalogController.removeListener(_syncControllersFromState);
     _apiKeyController.dispose();
+    _baseUrlController.dispose();
     _modelIdController.dispose();
     _systemPromptController.dispose();
     _temperatureController.dispose();
@@ -95,6 +104,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final ModelParameters params = settings.modelParameters;
 
     _setTextIfDifferent(_apiKeyController, controller.apiKey);
+    _setTextIfDifferent(_baseUrlController, settings.baseUrl ?? '');
     _setTextIfDifferent(_modelIdController, settings.selectedModelId ?? '');
     _setTextIfDifferent(_systemPromptController, settings.systemPrompt);
     _setTextIfDifferent(_temperatureController, params.temperature.toString());
@@ -152,6 +162,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await controller.updateModelParameters(updated);
   }
 
+  Future<void> _showRevealApiKeyDialog() async {
+    if (_revealBusy) {
+      return;
+    }
+    setState(() {
+      _revealBusy = true;
+    });
+
+    final bool? verified = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return _PinRevealDialog(verifyPin: widget.controller.verifyPin);
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _revealBusy = false;
+    });
+
+    if (verified == true) {
+      setState(() {
+        _showApiKey = true;
+      });
+      final String key = widget.controller.apiKey;
+      if (key.trim().isNotEmpty) {
+        await Clipboard.setData(ClipboardData(text: key));
+      }
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('API key copied')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final SettingsController controller = widget.controller;
@@ -171,15 +221,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             TextField(
               controller: _apiKeyController,
-              obscureText: true,
+              obscureText: !_showApiKey,
+              readOnly: true,
               enableSuggestions: false,
               autocorrect: false,
               decoration: const InputDecoration(
                 labelText: 'API key',
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonal(
+                onPressed: _showRevealApiKeyDialog,
+                child: const Text('Reveal API key (PIN)'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _baseUrlController,
+              enableSuggestions: false,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'BASE_URL',
+                border: OutlineInputBorder(),
+              ),
               onSubmitted: (value) async {
-                await controller.saveApiKey(value);
+                await controller.updateBaseUrl(value);
               },
             ),
             const SizedBox(height: 8),
@@ -187,9 +256,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               alignment: Alignment.centerLeft,
               child: FilledButton.tonal(
                 onPressed: () async {
-                  await controller.saveApiKey(_apiKeyController.text);
+                  await controller.updateBaseUrl(_baseUrlController.text);
                 },
-                child: const Text('Save API key'),
+                child: const Text('Save BASE_URL'),
               ),
             ),
             const SizedBox(height: 8),
@@ -518,6 +587,114 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PinRevealDialog extends StatefulWidget {
+  const _PinRevealDialog({required this.verifyPin});
+
+  final Future<bool> Function(String pin) verifyPin;
+
+  @override
+  State<_PinRevealDialog> createState() => _PinRevealDialogState();
+}
+
+class _PinRevealDialogState extends State<_PinRevealDialog> {
+  static const int _maxAttempts = 5;
+
+  String _pin = '';
+  int _attemptsLeft = _maxAttempts;
+  bool _isChecking = false;
+  String? _error;
+
+  bool get _enabled => !_isChecking && _attemptsLeft > 0;
+
+  void _onDigit(String digit) {
+    if (!_enabled || _pin.length >= 4) {
+      return;
+    }
+    setState(() {
+      _pin += digit;
+      _error = null;
+    });
+    if (_pin.length == 4) {
+      _submit();
+    }
+  }
+
+  void _onBackspace() {
+    if (!_enabled || _pin.isEmpty) {
+      return;
+    }
+    setState(() {
+      _pin = _pin.substring(0, _pin.length - 1);
+      _error = null;
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_pin.length != 4 || !_enabled) {
+      return;
+    }
+    setState(() {
+      _isChecking = true;
+    });
+    final bool ok = await widget.verifyPin(_pin);
+    if (!mounted) {
+      return;
+    }
+    if (ok) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() {
+      _isChecking = false;
+      _pin = '';
+      _attemptsLeft = _attemptsLeft > 0 ? _attemptsLeft - 1 : 0;
+      _error = _attemptsLeft > 0
+          ? 'Incorrect PIN. Attempts left: $_attemptsLeft'
+          : 'Too many attempts. Close and try later.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Reveal API key'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Text('Enter your 4-digit PIN'),
+            const SizedBox(height: 12),
+            Text('●' * _pin.length),
+            if (_error != null) ...<Widget>[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: 12),
+            PinPad(
+              onDigit: _onDigit,
+              onBackspace: _onBackspace,
+              enabled: _enabled,
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _isChecking
+              ? null
+              : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+      ],
     );
   }
 }

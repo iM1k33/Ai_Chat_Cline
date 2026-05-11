@@ -8,6 +8,7 @@ class SecureStorageService {
     : _storage = storage ?? const FlutterSecureStorage();
 
   static const String apiKeyKey = 'apiKey';
+  static const String pinKey = 'pinCode';
 
   final FlutterSecureStorage _storage;
 
@@ -26,6 +27,16 @@ class SecureStorageService {
     await _saveString(trimmed);
   }
 
+  Future<void> savePin(String pin) async {
+    final String trimmed = pin.trim();
+    final RegExp pinPattern = RegExp(r'^\d{4}$');
+    if (!pinPattern.hasMatch(trimmed)) {
+      throw ArgumentError('PIN must be exactly 4 digits');
+    }
+
+    await _saveString(trimmed, key: pinKey);
+  }
+
   Future<String?> readApiKey() async {
     if (_useSecureStorage) {
       return _storage.read(key: apiKeyKey);
@@ -37,6 +48,19 @@ class SecureStorageService {
     }
 
     return _storage.read(key: apiKeyKey);
+  }
+
+  Future<String?> readPin() async {
+    if (_useSecureStorage) {
+      return _storage.read(key: pinKey);
+    }
+
+    if (_useSharedPreferences) {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      return prefs.getString(pinKey);
+    }
+
+    return _storage.read(key: pinKey);
   }
 
   Future<void> deleteApiKey() async {
@@ -54,21 +78,36 @@ class SecureStorageService {
     await _storage.delete(key: apiKeyKey);
   }
 
-  Future<void> _saveString(String value) async {
+  Future<void> deletePin() async {
     if (_useSecureStorage) {
-      await _storage.delete(key: apiKeyKey);
-      await _storage.write(key: apiKeyKey, value: value);
+      await _storage.delete(key: pinKey);
       return;
     }
 
     if (_useSharedPreferences) {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.remove(apiKeyKey);
-      await prefs.setString(apiKeyKey, value);
+      await prefs.remove(pinKey);
       return;
     }
 
-    await _storage.delete(key: apiKeyKey);
-    await _storage.write(key: apiKeyKey, value: value);
+    await _storage.delete(key: pinKey);
+  }
+
+  Future<void> _saveString(String value, {String key = apiKeyKey}) async {
+    if (_useSecureStorage) {
+      await _storage.delete(key: key);
+      await _storage.write(key: key, value: value);
+      return;
+    }
+
+    if (_useSharedPreferences) {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+      await prefs.setString(key, value);
+      return;
+    }
+
+    await _storage.delete(key: key);
+    await _storage.write(key: key, value: value);
   }
 }

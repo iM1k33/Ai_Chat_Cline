@@ -14,17 +14,23 @@ class InitialSetupScreen extends StatefulWidget {
 
 class _InitialSetupScreenState extends State<InitialSetupScreen> {
   late final TextEditingController _apiKeyController;
+  late final TextEditingController _baseUrlController;
   bool _obscureApiKey = true;
+  bool _baseUrlManuallyEdited = false;
 
   @override
   void initState() {
     super.initState();
     _apiKeyController = TextEditingController(text: widget.controller.apiKey);
+    _baseUrlController = TextEditingController(
+      text: widget.controller.settings.baseUrl ?? '',
+    );
   }
 
   @override
   void dispose() {
     _apiKeyController.dispose();
+    _baseUrlController.dispose();
     super.dispose();
   }
 
@@ -51,7 +57,18 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
   }
 
   Future<void> _validateAndContinue() async {
-    await widget.controller.saveAndValidateInitialApiKey(_apiKeyController.text);
+    await widget.controller.saveAndValidateInitialApiSetup(
+      apiKey: _apiKeyController.text,
+      baseUrl: _baseUrlController.text,
+    );
+  }
+
+  void _onApiKeyChanged(String value) {
+    final AIProvider? provider = ProviderDetector.tryDetectByApiKey(value);
+    if (provider != null && !_baseUrlManuallyEdited) {
+      _baseUrlController.text = provider.baseUrl;
+    }
+    setState(() {});
   }
 
   @override
@@ -105,9 +122,22 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                             ),
                           ),
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: _onApiKeyChanged,
                         onSubmitted: (_) async {
                           await _validateAndContinue();
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _baseUrlController,
+                        enableSuggestions: false,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          labelText: 'BASE_URL',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) {
+                          _baseUrlManuallyEdited = true;
                         },
                       ),
                       const SizedBox(height: 12),
@@ -134,7 +164,9 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Validate / Continue'),
                         ),

@@ -8,6 +8,7 @@ class AppSettings {
   const AppSettings({
     this.selectedProviderId,
     this.selectedModelId,
+    this.baseUrl,
     this.systemPrompt = '',
     this.themeMode = ThemeModeOption.system,
     this.locale = LocaleOption.system,
@@ -18,6 +19,7 @@ class AppSettings {
 
   final String? selectedProviderId;
   final String? selectedModelId;
+  final String? baseUrl;
   final String systemPrompt;
   final ThemeModeOption themeMode;
   final LocaleOption locale;
@@ -29,6 +31,7 @@ class AppSettings {
     return AppSettings(
       selectedProviderId: null,
       selectedModelId: null,
+      baseUrl: null,
       systemPrompt: '',
       themeMode: ThemeModeOption.system,
       locale: LocaleOption.system,
@@ -39,8 +42,9 @@ class AppSettings {
   }
 
   AppSettings copyWith({
-    String? selectedProviderId,
-    String? selectedModelId,
+    Object? selectedProviderId = _noValue,
+    Object? selectedModelId = _noValue,
+    Object? baseUrl = _noValue,
     String? systemPrompt,
     ThemeModeOption? themeMode,
     LocaleOption? locale,
@@ -49,8 +53,13 @@ class AppSettings {
     bool? isApiKeyValidated,
   }) {
     return AppSettings(
-      selectedProviderId: selectedProviderId ?? this.selectedProviderId,
-      selectedModelId: selectedModelId ?? this.selectedModelId,
+      selectedProviderId: selectedProviderId == _noValue
+          ? this.selectedProviderId
+          : selectedProviderId as String?,
+      selectedModelId: selectedModelId == _noValue
+          ? this.selectedModelId
+          : selectedModelId as String?,
+      baseUrl: baseUrl == _noValue ? this.baseUrl : baseUrl as String?,
       systemPrompt: systemPrompt ?? this.systemPrompt,
       themeMode: themeMode ?? this.themeMode,
       locale: locale ?? this.locale,
@@ -65,6 +74,7 @@ class AppSettings {
     return <String, dynamic>{
       'selectedProviderId': selectedProviderId,
       'selectedModelId': selectedModelId,
+      'baseUrl': baseUrl,
       'systemPrompt': systemPrompt,
       'themeMode': themeModeToString(themeMode),
       'locale': localeToString(locale),
@@ -78,6 +88,7 @@ class AppSettings {
     return AppSettings(
       selectedProviderId: json['selectedProviderId'] as String?,
       selectedModelId: json['selectedModelId'] as String?,
+      baseUrl: json['baseUrl'] as String?,
       systemPrompt: json['systemPrompt'] as String? ?? '',
       themeMode: themeModeFromString(json['themeMode'] as String? ?? 'system'),
       locale: localeFromString(json['locale'] as String? ?? 'system'),
@@ -124,3 +135,5 @@ class AppSettings {
     };
   }
 }
+
+const Object _noValue = Object();
