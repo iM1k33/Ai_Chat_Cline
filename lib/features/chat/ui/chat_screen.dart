@@ -24,6 +24,7 @@ class ChatScreen extends StatefulWidget {
     this.selectedModelId,
     this.onOpenSettings,
     this.onOpenStatistics,
+    this.onOpenGraphs,
   });
 
   final ChatController controller;
@@ -36,6 +37,7 @@ class ChatScreen extends StatefulWidget {
 
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenStatistics;
+  final VoidCallback? onOpenGraphs;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -609,6 +611,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                     case _AppBarMenuAction.statistics:
                                       widget.onOpenStatistics?.call();
                                       break;
+                                    case _AppBarMenuAction.graphs:
+                                      widget.onOpenGraphs?.call();
+                                      break;
                                     case _AppBarMenuAction.settings:
                                       widget.onOpenSettings?.call();
                                       break;
@@ -623,6 +628,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                             Icons.analytics_outlined,
                                           ),
                                           title: Text('Statistics'),
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                      const PopupMenuItem<_AppBarMenuAction>(
+                                        value: _AppBarMenuAction.graphs,
+                                        child: ListTile(
+                                          leading: Icon(Icons.show_chart),
+                                          title: Text('Graphs'),
                                           contentPadding: EdgeInsets.zero,
                                         ),
                                       ),
@@ -694,6 +707,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           case _AppBarMenuAction.statistics:
                             widget.onOpenStatistics?.call();
                             break;
+                          case _AppBarMenuAction.graphs:
+                            widget.onOpenGraphs?.call();
+                            break;
                           case _AppBarMenuAction.settings:
                             widget.onOpenSettings?.call();
                             break;
@@ -706,6 +722,14 @@ class _ChatScreenState extends State<ChatScreen> {
                               child: ListTile(
                                 leading: Icon(Icons.analytics_outlined),
                                 title: Text('Statistics'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            const PopupMenuItem<_AppBarMenuAction>(
+                              value: _AppBarMenuAction.graphs,
+                              child: ListTile(
+                                leading: Icon(Icons.show_chart),
+                                title: Text('Graphs'),
                                 contentPadding: EdgeInsets.zero,
                               ),
                             ),
@@ -809,7 +833,7 @@ class _ActionBar extends StatelessWidget {
   }
 }
 
-enum _AppBarMenuAction { statistics, settings }
+enum _AppBarMenuAction { statistics, graphs, settings }
 
 class _ProviderModelStatusBar extends StatelessWidget {
   const _ProviderModelStatusBar({
