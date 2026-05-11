@@ -20,6 +20,7 @@ import 'package:aichatcline/features/settings/ui/pin_setup_screen.dart';
 import 'package:aichatcline/features/settings/ui/pin_unlock_screen.dart';
 import 'package:aichatcline/features/settings/ui/settings_screen.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
+import 'package:aichatcline/features/statistics/ui/graph_screen.dart';
 import 'package:aichatcline/features/statistics/ui/statistics_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -156,6 +157,65 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
     );
   }
 
+  void _openGraphs(BuildContext context) {
+    _statisticsController.refresh();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GraphScreen(controller: _statisticsController),
+      ),
+    );
+  }
+
+  Future<void> _showBalanceFromChat(BuildContext context) async {
+    await _statisticsController.loadAccountBalance();
+    if (!context.mounted) {
+      return;
+    }
+
+    final balance = _statisticsController.accountBalance;
+    final String? balanceError = _statisticsController.balanceError;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text(
+                  'Account balance',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                if (balanceError != null)
+                  Text(
+                    balanceError,
+                    style: TextStyle(
+                      color: Theme.of(sheetContext).colorScheme.error,
+                    ),
+                  )
+                else if (balance == null)
+                  const Text('No balance data available')
+                else ...<Widget>[
+                  Text('Provider: ${balance.providerId}'),
+                  Text(
+                    'Balance: ${balance.balance?.toStringAsFixed(6) ?? '-'} ${balance.currencyCode ?? ''}',
+                  ),
+                  Text(
+                    'Status: ${(balance.subscriptionStatus?.trim().isNotEmpty ?? false) ? balance.subscriptionStatus : '-'}',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   ThemeMode _resolveThemeMode(ThemeModeOption value) {
     return switch (value) {
       ThemeModeOption.system => ThemeMode.system,
@@ -241,6 +301,8 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
                 selectedModelId: _selectedModelIdOrNull(),
                 onOpenSettings: () => _openSettings(context),
                 onOpenStatistics: () => _openStatistics(context),
+                onOpenGraphs: () => _openGraphs(context),
+                onShowBalance: () => _showBalanceFromChat(context),
               );
             },
           ),

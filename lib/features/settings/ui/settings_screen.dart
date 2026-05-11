@@ -36,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _modelSearchController;
   late ThemeModeOption _selectedThemeMode;
   late LocaleOption _selectedLocale;
+  final FocusNode _apiKeyFocusNode = FocusNode();
   bool _revealBusy = false;
   bool _showApiKey = false;
 
@@ -91,6 +92,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _frequencyPenaltyController.dispose();
     _presencePenaltyController.dispose();
     _modelSearchController.dispose();
+    _apiKeyFocusNode.dispose();
     super.dispose();
   }
 
@@ -199,7 +201,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('API key copied')));
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _apiKeyFocusNode.requestFocus();
+      });
     }
+  }
+
+  Future<bool> _showClearApiKeyConfirmation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Clear API key?'),
+          content: const Text(
+            'This will remove the saved API key and reset validation state. Chat history, statistics, and logs will be kept.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Clear'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
   }
 
   @override
@@ -221,22 +255,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             TextField(
               controller: _apiKeyController,
+              focusNode: _apiKeyFocusNode,
               obscureText: !_showApiKey,
-              readOnly: true,
+              readOnly: false,
               enableSuggestions: false,
               autocorrect: false,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (String value) async {
+                await controller.saveApiKey(value);
+              },
               decoration: const InputDecoration(
                 labelText: 'API key',
                 border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.tonal(
-                onPressed: _showRevealApiKeyDialog,
-                child: const Text('Reveal API key (PIN)'),
-              ),
+            Row(
+              children: <Widget>[
+                FilledButton.tonal(
+                  onPressed: _showRevealApiKeyDialog,
+                  child: const Text('Reveal API key (PIN)'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () async {
+                    final bool confirmed = await _showClearApiKeyConfirmation();
+                    if (!confirmed) {
+                      return;
+                    }
+                    await controller.clearApiKey(keepPin: true);
+                    _apiKeyController.clear();
+                    if (mounted) {
+                      setState(() {
+                        _showApiKey = false;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.clear),
+                  label: const Text('Clear API key'),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             TextField(
@@ -273,6 +331,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     (!controller.hasApiKey || controller.isValidatingApiKey)
                     ? null
                     : () async {
+                        await controller.saveApiKey(_apiKeyController.text);
+                        await controller.updateBaseUrl(_baseUrlController.text);
                         await controller.validateCurrentApiKey();
                       },
                 child: controller.isValidatingApiKey

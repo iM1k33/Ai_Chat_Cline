@@ -25,6 +25,7 @@ class ChatScreen extends StatefulWidget {
     this.onOpenSettings,
     this.onOpenStatistics,
     this.onOpenGraphs,
+    this.onShowBalance,
   });
 
   final ChatController controller;
@@ -38,6 +39,7 @@ class ChatScreen extends StatefulWidget {
   final VoidCallback? onOpenSettings;
   final VoidCallback? onOpenStatistics;
   final VoidCallback? onOpenGraphs;
+  final Future<void> Function()? onShowBalance;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -597,6 +599,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                           .controller
                                           .regenerateLastAssistantResponse,
                               ),
+                              IconButton(
+                                tooltip: 'Balance',
+                                icon: const Icon(Icons.account_balance_wallet),
+                                onPressed: widget.onShowBalance,
+                              ),
                               const Spacer(),
                               IconButton(
                                 tooltip: 'Export conversation',
@@ -694,6 +701,11 @@ class _ChatScreenState extends State<ChatScreen> {
                               widget.controller.isStreaming
                           ? null
                           : widget.controller.regenerateLastAssistantResponse,
+                    ),
+                    IconButton(
+                      tooltip: 'Balance',
+                      icon: const Icon(Icons.account_balance_wallet),
+                      onPressed: widget.onShowBalance,
                     ),
                     const SizedBox(width: 8),
                     IconButton(

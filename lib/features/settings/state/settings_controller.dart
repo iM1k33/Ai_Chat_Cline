@@ -142,6 +142,43 @@ class SettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearApiKey({bool keepPin = true}) async {
+    error = null;
+    try {
+      await _secureStorage.deleteApiKey();
+      if (!keepPin) {
+        await _secureStorage.deletePin();
+      }
+
+      apiKey = '';
+      detectedProvider = null;
+      isValidatingApiKey = false;
+
+      settings = settings.copyWith(
+        selectedProviderId: null,
+        selectedModelId: null,
+        baseUrl: null,
+        isApiKeyValidated: false,
+      );
+      await _settingsStorage.saveSettings(settings);
+
+      if (!keepPin) {
+        isUnlocked = false;
+        isPinSetupRequired = false;
+        remainingPinAttempts = _maxPinAttempts;
+      }
+    } catch (e) {
+      error = 'Failed to clear API key';
+      await _appLogger?.logWarning(
+        category: 'settings',
+        message: 'Failed to clear API key',
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
+    }
+
+    notifyListeners();
+  }
+
   Future<void> saveAndValidateInitialApiKey(String apiKeyInput) async {
     final AIProvider? detected = ProviderDetector.tryDetectByApiKey(
       apiKeyInput,
