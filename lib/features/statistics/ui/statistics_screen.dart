@@ -1,14 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'package:aichatcline/features/export/services/export_service.dart';
+import 'package:aichatcline/features/export/services/share_service.dart';
 import 'package:aichatcline/features/statistics/models/account_balance.dart';
 import 'package:aichatcline/features/statistics/models/usage_record.dart';
 import 'package:aichatcline/features/statistics/state/statistics_controller.dart';
 
 class StatisticsScreen extends StatefulWidget {
-  const StatisticsScreen({super.key, required this.controller});
+  const StatisticsScreen({
+    super.key,
+    required this.controller,
+    required this.exportService,
+    required this.shareService,
+  });
 
   final StatisticsController controller;
+  final ExportService exportService;
+  final ShareService shareService;
 
   @override
   State<StatisticsScreen> createState() => _StatisticsScreenState();
@@ -59,6 +68,127 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     return confirmed ?? false;
   }
 
+  Future<void> _exportStatistics() async {
+    ExportFormat selectedFormat = ExportFormat.txt;
+
+    final bool? shouldExport = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder:
+              (BuildContext context, void Function(void Function()) setState) {
+                return AlertDialog(
+                  title: const Text('Export statistics'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text('Format'),
+                      const SizedBox(height: 8),
+                      DropdownButton<ExportFormat>(
+                        value: selectedFormat,
+                        isExpanded: true,
+                        items: const <DropdownMenuItem<ExportFormat>>[
+                          DropdownMenuItem<ExportFormat>(
+                            value: ExportFormat.txt,
+                            child: Text('TXT'),
+                          ),
+                          DropdownMenuItem<ExportFormat>(
+                            value: ExportFormat.markdown,
+                            child: Text('Markdown'),
+                          ),
+                          DropdownMenuItem<ExportFormat>(
+                            value: ExportFormat.json,
+                            child: Text('JSON'),
+                          ),
+                        ],
+                        onChanged: (ExportFormat? value) {
+                          if (value == null) {
+                            return;
+                          }
+                          setState(() {
+                            selectedFormat = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('Export'),
+                    ),
+                  ],
+                );
+              },
+        );
+      },
+    );
+
+    if (shouldExport != true) {
+      return;
+    }
+
+    final StatisticsController controller = widget.controller;
+    final DateTime now = DateTime.now();
+    final String content = widget.exportService.buildStatisticsExport(
+      format: selectedFormat,
+      generatedAt: now,
+      totalRequests: controller.totalRequests,
+      totalPromptTokens: controller.totalPromptTokens,
+      totalCompletionTokens: controller.totalCompletionTokens,
+      totalTokens: controller.totalTokens,
+      errorCount: controller.errorCount,
+      averageResponseTimeMs: controller.averageResponseTimeMs,
+      estimatedCostUsd: controller.totalEstimatedCostUsd,
+      estimatedCostRub: controller.totalEstimatedCostRub,
+      requestCountByModel: controller.requestCountByModel,
+      totalTokensByModel: controller.totalTokensByModel,
+      estimatedCostByModel: controller.estimatedCostByModel,
+      totalTokensByProvider: controller.totalTokensByProvider,
+      recentRecords: List<UsageRecord>.from(controller.records),
+    );
+
+    final String fileName = widget.exportService.suggestedStatisticsFileName(
+      selectedFormat,
+      now,
+    );
+
+    final ExportShareResult result = await widget.shareService
+        .saveExportFileWithPicker(fileName: fileName, content: content);
+
+    if (!mounted) {
+      return;
+    }
+
+    if (result.status == ExportShareStatus.cancelled) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Export cancelled')));
+      return;
+    }
+
+    if (result.usedShareSheet) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Statistics shared')));
+      return;
+    }
+
+    final String? path = result.file?.path;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          path == null ? 'Statistics exported' : 'Statistics exported: $path',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -88,6 +218,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                 onPressed: controller.isLoadingBalance
                     ? null
                     : controller.loadAccountBalance,
+              ),
+              IconButton(
+                tooltip: 'Export statistics',
+                icon: const Icon(Icons.download_outlined),
+                onPressed: controller.isLoading ? null : _exportStatistics,
               ),
               IconButton(
                 tooltip: 'Delete all statistics',

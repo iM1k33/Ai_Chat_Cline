@@ -377,6 +377,32 @@ class SettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> resetAllAppData() async {
+    error = null;
+    try {
+      await _secureStorage.deleteApiKey();
+      await _secureStorage.deletePin();
+      await _settingsStorage.resetSettings();
+
+      apiKey = '';
+      detectedProvider = null;
+      isValidatingApiKey = false;
+      isUnlocked = false;
+      isPinSetupRequired = false;
+      remainingPinAttempts = _maxPinAttempts;
+      settings = AppSettings.defaults();
+    } catch (e) {
+      error = 'Failed to reset app data';
+      await _appLogger?.logWarning(
+        category: 'settings',
+        message: 'Failed to reset all app data',
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
+    }
+
+    notifyListeners();
+  }
+
   void lockApp() {
     if (settings.isApiKeyValidated) {
       isUnlocked = false;

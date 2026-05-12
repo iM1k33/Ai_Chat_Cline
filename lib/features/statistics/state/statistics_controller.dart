@@ -230,4 +230,14 @@ class StatisticsController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  void resetLocalState() {
+    records = <UsageRecord>[];
+    accountBalance = null;
+    error = null;
+    balanceError = null;
+    isLoading = false;
+    isLoadingBalance = false;
+    notifyListeners();
+  }
 }

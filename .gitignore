@@ -32,6 +32,10 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+**/Flutter/ephemeral/
+ios/Pods/
+macos/Pods/
+macos/DerivedData/
 
 # Symbolication related
 app.*.symbols

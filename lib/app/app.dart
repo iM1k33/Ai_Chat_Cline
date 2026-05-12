@@ -154,6 +154,7 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
           controller: _settingsController,
           modelCatalogController: _modelCatalogController,
           onOpenLogs: () => _openLogs(settingsContext),
+          onResetAppData: _resetAllAppData,
         ),
       ),
     );
@@ -174,9 +175,30 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
     _statisticsController.refresh();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => StatisticsScreen(controller: _statisticsController),
+        builder: (_) => StatisticsScreen(
+          controller: _statisticsController,
+          exportService: _exportService,
+          shareService: _shareService,
+        ),
       ),
     );
+  }
+
+  Future<void> _resetAllAppData() async {
+    try {
+      await _chatRepository.deleteAllConversations();
+      await _statsRepository.deleteAllUsageRecords();
+      await _logsRepository.deleteAllLogs();
+      await _settingsController.resetAllAppData();
+      _statisticsController.resetLocalState();
+      await _chatController.load();
+    } catch (e) {
+      await _appLogger.logError(
+        category: 'settings',
+        message: 'Reset app data failed',
+        metadata: <String, dynamic>{'errorType': e.runtimeType.toString()},
+      );
+    }
   }
 
   void _openGraphs(BuildContext context) {

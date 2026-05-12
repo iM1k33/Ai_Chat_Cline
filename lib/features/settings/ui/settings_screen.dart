@@ -14,11 +14,13 @@ class SettingsScreen extends StatefulWidget {
     required this.controller,
     required this.modelCatalogController,
     this.onOpenLogs,
+    this.onResetAppData,
   });
 
   final SettingsController controller;
   final ModelCatalogController modelCatalogController;
   final VoidCallback? onOpenLogs;
+  final Future<void> Function()? onResetAppData;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -309,6 +311,135 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
     return confirmed ?? false;
+  }
+
+  Future<bool> _showResetAppDataConfirmation() async {
+    final TextEditingController textController = TextEditingController();
+    bool canConfirm = false;
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, void Function(void Function()) setState) {
+            return AlertDialog(
+              key: const Key('confirm_reset_app_data_dialog'),
+              title: const Text('Reset app data?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    'This will permanently delete API key, PIN, settings, chats, statistics, and logs. This cannot be undone.',
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Type RESET to confirm'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: textController,
+                    autofocus: true,
+                    textCapitalization: TextCapitalization.characters,
+                    onChanged: (String value) {
+                      setState(() {
+                        canConfirm = value.trim().toUpperCase() == 'RESET';
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'RESET',
+                    ),
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: canConfirm
+                      ? () => Navigator.of(context).pop(true)
+                      : null,
+                  child: const Text('Reset all data'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    textController.dispose();
+    return confirmed ?? false;
+  }
+
+  Future<void> _resetAppDataWithPinFlow() async {
+    if (_revealBusy || widget.onResetAppData == null) {
+      return;
+    }
+
+    setState(() {
+      _revealBusy = true;
+    });
+
+    final bool? verified = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return _PinRevealDialog(
+          verifyPin: widget.controller.verifyPin,
+          title: 'Confirm PIN',
+          prompt: 'Enter your 4-digit PIN to reset all app data',
+        );
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (verified != true) {
+      setState(() {
+        _revealBusy = false;
+      });
+      return;
+    }
+
+    final bool confirmed = await _showResetAppDataConfirmation();
+    if (!mounted) {
+      return;
+    }
+
+    if (!confirmed) {
+      setState(() {
+        _revealBusy = false;
+      });
+      return;
+    }
+
+    try {
+      await widget.onResetAppData!.call();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _revealBusy = false;
+        _showApiKey = false;
+      });
+
+      Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _revealBusy = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to reset app data')));
+    }
   }
 
   @override
@@ -703,6 +834,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               child: const Text('Reset settings'),
             ),
+            if (widget.onResetAppData != null) ...<Widget>[
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                key: const Key('settings_reset_app_data_button'),
+                style: FilledButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                onPressed: _revealBusy ? null : _resetAppDataWithPinFlow,
+                icon: const Icon(Icons.warning_amber_outlined),
+                label: const Text('Reset app data'),
+              ),
+            ],
             if (controller.isLoading)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
