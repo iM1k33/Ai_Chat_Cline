@@ -1,199 +1,294 @@
-# AI Chat
+# AI Chat (Flutter)
 
-A personal cross-platform AI chat client built with Flutter.
+Pretty, local-first AI chat client for **macOS** and **iOS** with OpenAI-compatible providers.
 
-The app is designed for macOS and iOS first, with support for OpenAI-compatible API providers through OpenRouter and VSEGPT.
+It supports provider detection, validated API setup, streaming replies, persistent conversations, usage analytics, exports, and safe internal logging.
 
-## Features
+---
 
-- OpenRouter and VSEGPT support
-- First-launch API key setup
-- Automatic provider detection from API key prefix
-- 4-digit PIN lock
-- API key reveal protected by PIN
-- Multiple saved conversations
-- Fixed model per conversation
-- Default model for new chats
-- Streaming responses
-- Stop generation
-- Regenerate last assistant response
-- Edit last user message and resend
-- Local SQLite chat history
-- Markdown rendering
-- Code block copy
-- Whole-message copy
-- Token/cost statistics
-- Usage graphs
-- Provider balance display
-- Conversation export: TXT, Markdown, JSON
-- Statistics export: TXT, Markdown, JSON
-- Logs screen with safe logging
-- macOS Save As dialog for exports
-- iOS Share Sheet for exports
-- Light/dark theme support
+## ✨ Highlights
 
-## Tested Platforms
+- 🔌 OpenRouter + VSEGPT support (OpenAI-compatible API)
+- 🔎 Automatic provider detection from API key prefix
+- ✅ API key validation during onboarding
+- 🔐 4-digit PIN lock with inactivity re-lock
+- 💬 Multi-conversation local chat history (SQLite)
+- ⚡ Streaming responses + stop generation
+- 🔁 Regenerate assistant answer / edit last user message and resend
+- 🧮 Token + cost statistics, response timings, provider/model breakdowns
+- 📈 Statistics screens + graphs
+- 💰 Account balance check
+- 📤 Exports (conversation + statistics) in TXT / Markdown / JSON
+- 🧾 Built-in app logs with metadata sanitization
+- 🎨 Light/Dark/System theme mode
 
-- macOS
-- iOS
+---
 
-Android/Windows support may require additional testing and platform setup.
+## 🧱 Tech Stack
 
-## Providers
+- **Framework:** Flutter (Dart)
+- **HTTP:** `http`
+- **Storage:** `sqflite` / `sqflite_common_ffi` (desktop), `shared_preferences`, `flutter_secure_storage`
+- **Charts:** `fl_chart`
+- **Markdown UI:** `flutter_markdown`
+- **Export/Share:** `file_selector`, `share_plus`
 
-### OpenRouter
+---
 
-API key prefix:
+## 🗂 Project Structure
 
 ```text
-sk-or-v1-
+lib/
+  app/
+    app.dart                 # App composition root (wiring controllers/services/screens)
+    app_theme.dart           # Light/Dark themes
+
+  core/
+    errors/app_exception.dart
+    utils/app_logger.dart    # Safe structured logging with redaction
+
+  data/
+    database/
+      app_database.dart      # SQLite init, schema creation, migrations
+      database_tables.dart   # Table + index SQL definitions
+    repositories/
+      chat_repository.dart
+      stats_repository.dart
+      logs_repository.dart
+    services/
+      secure_storage_service.dart
+      settings_storage_service.dart
+
+  features/
+    chat/
+      models/
+      state/chat_controller.dart
+      ui/
+    providers/
+      models/
+      services/
+        openai_compatible_client.dart
+        provider_detector.dart
+      state/model_catalog_controller.dart
+    settings/
+      state/
+      ui/
+    statistics/
+      models/
+      state/statistics_controller.dart
+      ui/
+    export/
+      services/
+        export_service.dart
+        share_service.dart
+    logs/
+      models/
+      ui/
+
+main.dart                    # Entry point
 ```
 
-Default base URL:
+---
 
-```text
-https://openrouter.ai/api/v1
-```
+## 🏛 Architecture Overview
 
-Default model after first setup:
+The app follows a simple layered architecture with feature modules:
 
-```text
-openrouter/free
-```
+1. **UI Layer** (`features/**/ui`)
+   - Screens/widgets render state and call controller actions.
 
-### VSEGPT
+2. **State/Controller Layer** (`features/**/state`)
+   - `ChangeNotifier` controllers contain app logic and orchestrate workflows.
+   - Examples: chat send/regenerate, settings validation, statistics loading.
 
-API key prefix:
+3. **Data Layer** (`data/repositories`, `data/services`)
+   - Repositories encapsulate SQLite operations.
+   - Services handle secure/local settings and platform export behaviors.
 
-```text
-sk-or-vv-
-```
+4. **Integration Layer** (`features/providers/services`)
+   - OpenAI-compatible HTTP client for models, chat completions, streaming, and balance.
 
-Default base URL:
+5. **Cross-cutting Core** (`core/`)
+   - Shared exceptions + sanitized logging.
 
-```text
-https://api.vsegpt.ru/v1
-```
+### Composition Root
 
-Default model after first setup:
+`lib/app/app.dart` wires everything together:
 
-```text
-openai/gpt-3.5-turbo
-```
+- `AppDatabase`
+- `ChatRepository`, `StatsRepository`, `LogsRepository`
+- `OpenAICompatibleClient`
+- `SettingsController`, `ModelCatalogController`, `ChatController`, `StatisticsController`
+- `ExportService`, `ShareService`, `AppLogger`
 
-VSEGPT behavior may depend on active balance/subscription status.
+This keeps dependency creation centralized and explicit.
 
-## Local Data
+---
 
-The app stores data locally:
+## 🧠 Core Components & Functions
 
-- API key / PIN: secure storage where available, desktop fallback where configured
-- Settings: local app storage
-- Conversations/messages: SQLite
-- Statistics: SQLite
-- Logs: SQLite
-- Exports: user-selected location on macOS, Share Sheet on iOS
+### `SettingsController`
 
-No API keys or PIN codes should be committed to Git.
+- Loads/saves `AppSettings`
+- Saves API key and detects provider by prefix
+- Validates API key via provider-specific checks
+- Manages PIN setup/unlock/reset and lock state
+- Updates model parameters, theme, locale, system prompt, logging options
+- Provides effective provider config (including custom base URL overrides)
 
-## macOS Entitlements
+### `ChatController`
 
-The macOS app needs these entitlements:
+- Loads and selects conversations
+- Creates new conversations (with default provider/model when available)
+- Sends user messages and requests assistant completions
+- Supports streaming responses and manual stop
+- Supports:
+  - regenerate last assistant message
+  - edit last user message + resend
+- Persists messages + usage records
+- Tracks UI state (`isLoading`, `isSending`, `isStreaming`, errors)
 
-```xml
-<key>com.apple.security.network.client</key>
-<true/>
+### `ModelCatalogController`
 
-<key>com.apple.security.files.user-selected.read-write</key>
-<true/>
-```
+- Loads available models from the current provider
+- Sorts/searches model catalog
+- Handles selected model persistence via settings
 
-`network.client` is required for outgoing API requests.
+### `StatisticsController`
 
-`files.user-selected.read-write` is required for macOS Save As export dialogs.
+- Loads usage records and computes aggregates:
+  - total requests/tokens/cost
+  - model/provider breakdown
+  - average response time
+  - error count
+- Fetches account balance from active provider
 
-Do not add `keychain-access-groups` manually unless you fully configure signing/keychain sharing in Xcode. Incorrect keychain entitlements can cause Code Signature Invalid crashes.
+### `OpenAICompatibleClient`
 
-## iOS Notes
+- Fetch models (`/models`)
+- Create chat completion (`/chat/completions`)
+- Create streaming completion (SSE)
+- Validate API key (provider-specific flow)
+- Fetch account balance (`/credits` or `/balance`)
+- Normalizes provider differences and throws `AppException` on failures
 
-iOS Keychain can preserve secure values after app uninstall/reinstall during development. If an old API key appears after reinstall, use the in-app reset flow or change the bundle identifier for a fresh test namespace.
+### `AppLogger`
 
-Exports on iOS use the native Share Sheet.
+- Writes logs to SQLite
+- Supports `info` / `warning` / `error`
+- Redacts sensitive fields (tokens, auth, API keys)
+- Optionally includes message snippets based on settings
 
-## Quick Start
+---
+
+## 🗃 Data Model (SQLite)
+
+Defined in `lib/data/database/database_tables.dart`:
+
+- `conversations`
+- `messages`
+- `usage_records`
+- `logs`
+
+Indexes are included for message order, usage analytics, and log retrieval.
+
+---
+
+## 🔌 Supported Providers
+
+| Provider | API key prefix | Default base URL | Default model |
+|---|---|---|---|
+| OpenRouter | `sk-or-v1-` | `https://openrouter.ai/api/v1` | `openrouter/free` |
+| VSEGPT | `sk-or-vv-` | `https://api.vsegpt.ru/v1` | `openai/gpt-3.5-turbo` |
+
+> VSEGPT behavior can depend on account balance/subscription state.
+
+---
+
+## 🔐 Security & Local Data
+
+- API key and PIN:
+  - iOS/Android → `flutter_secure_storage`
+  - Desktop fallback → `shared_preferences`
+- Settings: `shared_preferences`
+- Chats/statistics/logs: local SQLite database
+- Logs are sanitized to avoid leaking sensitive auth data
+
+---
+
+## 🚀 Quick Start
 
 ```bash
+flutter doctor
 flutter create .
 flutter pub get
+flutter analyze
+flutter test
 flutter run -d macos
 ```
 
-For iOS:
+Run on iOS:
 
 ```bash
 flutter devices
 flutter run -d ios
 ```
 
-## Build
+---
 
-macOS:
+## 🏗 Build
 
 ```bash
 flutter build macos
-```
-
-iOS:
-
-```bash
 flutter build ios
 ```
 
-See [BUILD.md](BUILD.md) for more detailed setup and troubleshooting.
+For full setup/troubleshooting, see **[BUILD.md](BUILD.md)**.
 
-## Troubleshooting
+---
 
-### macOS: Code Signature Invalid
+## 🍎 Platform Notes
 
-If the app crashes with:
+### macOS entitlements
 
-```text
-Taskgated Invalid Signature
-Code Signature Invalid
-```
-
-Check macOS entitlements. Remove incorrectly added `keychain-access-groups` unless properly configured.
-
-### macOS: API request fails
-
-Make sure this entitlement exists:
+Required for API/network calls:
 
 ```xml
 <key>com.apple.security.network.client</key>
 <true/>
 ```
 
-### macOS: export dialog does not open or cannot save
-
-Make sure this entitlement exists:
+Required for Save As export dialog:
 
 ```xml
 <key>com.apple.security.files.user-selected.read-write</key>
 <true/>
 ```
 
-### iOS: old API key appears after reinstall
+Do **not** add `keychain-access-groups` unless fully configured in Xcode signing setup.
 
-iOS Keychain may preserve secure values after uninstall. Use in-app reset or change bundle identifier for clean testing.
+### iOS keychain behavior
 
-### Shift+Enter behavior on macOS
+iOS may retain secure values across reinstall during development. If old credentials reappear, use in-app reset flow or change bundle identifier for clean testing.
 
-Expected behavior:
+---
 
-- `Enter` sends message
-- `Shift+Enter` inserts a new line
+## 🧪 Testing
 
-## AI Chat App — v2 roadmap
+Project includes unit/widget tests for controllers, provider detection, API client behavior, export services, logging, and UI interactions.
+
+```bash
+flutter test
+```
+
+---
+
+## ✅ Current Status
+
+- Primary targets: **macOS** and **iOS**
+- Other platforms may need extra testing and platform-specific setup
+
+## 🔜 AI Chat v2 - Roadmap
 - Add localization infrastructure
 - Start new conversation with context from other chat
 - In-bubble message edit
