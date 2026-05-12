@@ -1,112 +1,205 @@
 # AI Chat
 
-AI Chat is a Flutter client for chatting with OpenAI-compatible providers (currently OpenRouter and VSEGPT), with local conversation history, usage statistics, export, and PIN-protected API-key controls.
+A personal cross-platform AI chat client built with Flutter.
+
+The app is designed for macOS and iOS first, with support for OpenAI-compatible API providers through OpenRouter and VSEGPT.
 
 ## Features
 
-- Provider detection from API key prefix
-- Initial setup flow with API key validation
-- PIN setup/unlock gate
-- Multi-chat conversations with fixed per-conversation model/provider
-- Message editing and regenerate flows
-- Usage statistics (totals, by-model, by-provider, recent records)
-- Account balance checks
-- Export:
-  - Conversations: TXT / Markdown / JSON
-  - Statistics: TXT / Markdown / JSON
-  - Logs: JSON
-- Full reset app data flow (PIN + strong confirmation)
+- OpenRouter and VSEGPT support
+- First-launch API key setup
+- Automatic provider detection from API key prefix
+- Editable `BASE_URL`
+- API key validation
+- 4-digit PIN lock
+- API key reveal protected by PIN
+- Multiple saved conversations
+- Fixed model per conversation
+- Default model for new chats
+- Streaming responses
+- Stop generation
+- Regenerate last assistant response
+- Edit last user message and resend
+- Local SQLite chat history
+- Markdown rendering
+- Code block copy
+- Whole-message copy
+- Token/cost statistics
+- Usage graphs
+- Provider balance display
+- Conversation export: TXT, Markdown, JSON
+- Statistics export: TXT, Markdown, JSON
+- Logs screen with safe logging
+- macOS Save As dialog for exports
+- iOS Share Sheet for exports
+- Light/dark theme support
 
-## Supported providers
+## Tested Platforms
 
-- **OpenRouter**
-  - Default model for new chats: `openrouter/free`
-- **VSEGPT**
-  - Default model for new chats: `openai/gpt-3.5-turbo`
+- macOS
+- iOS
 
-## Project setup
+Android/Windows support may require additional testing and platform setup.
+
+## Providers
+
+### OpenRouter
+
+API key prefix:
+
+```text
+sk-or-v1-
+```
+
+Default base URL:
+
+```text
+https://openrouter.ai/api/v1
+```
+
+Default model after first setup:
+
+```text
+openrouter/free
+```
+
+### VSEGPT
+
+API key prefix:
+
+```text
+sk-or-vv-
+```
+
+Default base URL:
+
+```text
+https://api.vsegpt.ru/v1
+```
+
+Default model after first setup:
+
+```text
+openai/gpt-3.5-turbo
+```
+
+VSEGPT behavior may depend on active balance/subscription status.
+
+## Local Data
+
+The app stores data locally:
+
+- API key / PIN: secure storage where available, desktop fallback where configured
+- Settings: local app storage
+- Conversations/messages: SQLite
+- Statistics: SQLite
+- Logs: SQLite
+- Exports: user-selected location on macOS, Share Sheet on iOS
+
+No API keys or PIN codes should be committed to Git.
+
+## macOS Entitlements
+
+The macOS app needs these entitlements:
+
+```xml
+<key>com.apple.security.network.client</key>
+<true/>
+
+<key>com.apple.security.files.user-selected.read-write</key>
+<true/>
+```
+
+`network.client` is required for outgoing API requests.
+
+`files.user-selected.read-write` is required for macOS Save As export dialogs.
+
+Do not add `keychain-access-groups` manually unless you fully configure signing/keychain sharing in Xcode. Incorrect keychain entitlements can cause Code Signature Invalid crashes.
+
+## iOS Notes
+
+iOS Keychain can preserve secure values after app uninstall/reinstall during development. If an old API key appears after reinstall, use the in-app reset flow or change the bundle identifier for a fresh test namespace.
+
+Exports on iOS use the native Share Sheet.
+
+## Quick Start
 
 ```bash
 flutter pub get
-```
-
-## Run
-
-### macOS
-
-```bash
 flutter run -d macos
 ```
 
-### iOS (simulator)
+For iOS:
 
 ```bash
+flutter devices
 flutter run -d ios
 ```
 
 ## Build
 
-### macOS release
+macOS:
 
 ```bash
-flutter build macos --release
+flutter build macos
 ```
 
-### iOS release
+iOS:
 
 ```bash
-flutter build ios --release
+flutter build ios
 ```
 
-## Validation / CI-style checks
-
-```bash
-dart format .
-flutter analyze
-flutter test
-```
-
-## macOS / iOS notes
-
-### Secure storage behavior
-
-- iOS uses `flutter_secure_storage`.
-- macOS/Linux/Windows use `shared_preferences` fallback in this project.
-
-### Entitlements
-
-- `macos/Runner/DebugProfile.entitlements`:
-  - app sandbox
-  - network client
-  - user-selected file read/write
-- `macos/Runner/Release.entitlements`:
-  - app sandbox
-  - user-selected file read/write
-
-> If release builds need remote API calls on macOS sandbox, ensure the release entitlements include the required network client capability for your distribution model.
-
-## Export behavior
-
-- Desktop: system Save As flow (`file_selector`)
-- iOS: native share sheet (`share_plus`)
-
-No API key or PIN values are included in statistics export payloads.
+See [BUILD.md](BUILD.md) for more detailed setup and troubleshooting.
 
 ## Troubleshooting
 
-- **Provider not detected**
-  - Check API key prefix format.
-- **Validation failed**
-  - Verify key and provider availability.
-- **Balance unavailable**
-  - Check provider endpoint/credits API and network access.
-- **No file created on desktop export**
-  - Confirm Save As dialog was completed (not canceled).
-- **PIN lock issues**
-  - Use reset flows in unlock/settings screens as intended.
+### macOS: Code Signature Invalid
 
-## Release prep notes
+If the app crashes with:
 
-- Visible app name is configured as **AI Chat** in Flutter and Apple platform metadata.
-- `.gitignore` includes Flutter build/ephemeral and CocoaPods user-data paths.
-- **TODO (manual, if required by release process):** update bundle identifiers and signing metadata for your organization before store/distribution submission.
+```text
+Taskgated Invalid Signature
+Code Signature Invalid
+```
+
+Check macOS entitlements. Remove incorrectly added `keychain-access-groups` unless properly configured.
+
+### macOS: API request fails
+
+Make sure this entitlement exists:
+
+```xml
+<key>com.apple.security.network.client</key>
+<true/>
+```
+
+### macOS: export dialog does not open or cannot save
+
+Make sure this entitlement exists:
+
+```xml
+<key>com.apple.security.files.user-selected.read-write</key>
+<true/>
+```
+
+### iOS: old API key appears after reinstall
+
+iOS Keychain may preserve secure values after uninstall. Use in-app reset or change bundle identifier for clean testing.
+
+### Shift+Enter behavior on macOS
+
+Expected behavior:
+
+- `Enter` sends message
+- `Shift+Enter` inserts a new line
+
+## Release TODO
+
+- Final app icon
+- Final app display name
+- Bundle identifier cleanup
+- Full VSEGPT production testing
+- UI polish pass
+- Localization
+- Better release signing/notarization

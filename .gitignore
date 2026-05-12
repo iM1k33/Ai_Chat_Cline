@@ -1,49 +1,90 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+ # Flutter / Dart
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
+.packages
 .pub-cache/
 .pub/
-/build/
-/coverage/
-**/Flutter/ephemeral/
+build/
+coverage/
+
+# Generated files
+*.g.dart
+*.freezed.dart
+*.gr.dart
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode / iOS / macOS
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/Runner/GeneratedPluginRegistrant.*
 ios/Pods/
+ios/Podfile.lock
+ios/.symlinks/
+ios/build/
+
+macos/Flutter/ephemeral/
 macos/Pods/
-macos/DerivedData/
+macos/Podfile.lock
+macos/.symlinks/
+macos/build/
 
-# Symbolication related
-app.*.symbols
+# Android if platform is added later
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
 
-# Obfuscation related
-app.*.map.json
+# Windows/Linux build artifacts if added later
+windows/flutter/ephemeral/
+windows/build/
+linux/flutter/ephemeral/
+linux/build/
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Secrets / environment
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*.p12
+*.key
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# Local app data / databases / exports
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+exports/
+logs/
+chat_cache.db
+ai_chat.db
+
+# Test/output artifacts
+test-results/
+screenshots/
+*.log
+
+# Flutter launcher icons backups sometimes created by tools
+flutter_launcher_icons-*.yaml
+
+# Misc
+*.tmp
+*.bak
