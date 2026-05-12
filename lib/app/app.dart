@@ -189,9 +189,11 @@ class _AIChatAppState extends State<AIChatApp> with WidgetsBindingObserver {
       await _chatRepository.deleteAllConversations();
       await _statsRepository.deleteAllUsageRecords();
       await _logsRepository.deleteAllLogs();
-      await _settingsController.resetAllAppData();
+
+      _chatController.resetLocalState();
       _statisticsController.resetLocalState();
-      await _chatController.load();
+
+      await _settingsController.resetAllAppData();
     } catch (e) {
       await _appLogger.logError(
         category: 'settings',

@@ -1230,4 +1230,23 @@ class ChatController extends ChangeNotifier {
 
     metadata[key] = value;
   }
+
+void resetLocalState() {
+    _activeStreamSubscription?.cancel();
+    _activeStreamSubscription = null;
+    _activeStreamFinalize = null;
+
+    conversations = <Conversation>[];
+    currentConversation = null;
+    messages = <ChatMessage>[];
+
+    isLoading = false;
+    isSending = false;
+    isStreaming = false;
+    streamingMessageId = null;
+    error = null;
+    _stopStreamingRequested = false;
+
+    notifyListeners();
+  }
 }

@@ -315,64 +315,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<bool> _showResetAppDataConfirmation() async {
     final TextEditingController textController = TextEditingController();
-    bool canConfirm = false;
 
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, void Function(void Function()) setState) {
-            return AlertDialog(
-              key: const Key('confirm_reset_app_data_dialog'),
-              title: const Text('Reset app data?'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text(
-                    'This will permanently delete API key, PIN, settings, chats, statistics, and logs. This cannot be undone.',
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Type RESET to confirm'),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: textController,
-                    autofocus: true,
-                    textCapitalization: TextCapitalization.characters,
-                    onChanged: (String value) {
-                      setState(() {
-                        canConfirm = value.trim().toUpperCase() == 'RESET';
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'RESET',
-                    ),
-                  ),
-                ],
-              ),
-              actions: <Widget>[
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: canConfirm
-                      ? () => Navigator.of(context).pop(true)
-                      : null,
-                  child: const Text('Reset all data'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+    try {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return _ResetAppDataConfirmationDialog(
+            controller: textController,
+          );
+        },
+      );
 
-    textController.dispose();
-    return confirmed ?? false;
+      return confirmed ?? false;
+    } finally {
+      textController.dispose();
+    }
   }
-
   Future<void> _resetAppDataWithPinFlow() async {
     if (_revealBusy || widget.onResetAppData == null) {
       return;
@@ -382,9 +340,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _revealBusy = true;
     });
 
+    final Future<void> Function() resetAppData = widget.onResetAppData!;
+    final NavigatorState navigator = Navigator.of(context);
+
     final bool? verified = await showDialog<bool>(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return _PinRevealDialog(
           verifyPin: widget.controller.verifyPin,
           title: 'Confirm PIN',
@@ -405,6 +366,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     final bool confirmed = await _showResetAppDataConfirmation();
+
     if (!mounted) {
       return;
     }
@@ -416,32 +378,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
+    setState(() {
+      _revealBusy = false;
+      _showApiKey = false;
+    });
+
+    navigator.popUntil((Route<dynamic> route) => route.isFirst);
+
+    await WidgetsBinding.instance.endOfFrame;
+
     try {
-      await widget.onResetAppData!.call();
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _revealBusy = false;
-        _showApiKey = false;
-      });
-
-      Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+      await resetAppData();
     } catch (_) {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _revealBusy = false;
-      });
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Failed to reset app data')));
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final SettingsController controller = widget.controller;
@@ -966,6 +923,71 @@ class _PinRevealDialogState extends State<_PinRevealDialog> {
               ? null
               : () => Navigator.of(context).pop(false),
           child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ResetAppDataConfirmationDialog extends StatefulWidget {
+  const _ResetAppDataConfirmationDialog({
+    required this.controller,
+  });
+
+  final TextEditingController controller;
+
+  @override
+  State<_ResetAppDataConfirmationDialog> createState() =>
+      _ResetAppDataConfirmationDialogState();
+}
+
+class _ResetAppDataConfirmationDialogState
+    extends State<_ResetAppDataConfirmationDialog> {
+  bool _canConfirm = false;
+
+  void _handleChanged(String value) {
+    setState(() {
+      _canConfirm = value.trim().toUpperCase() == 'RESET';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      key: const Key('confirm_reset_app_data_dialog'),
+      title: const Text('Reset app data?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            'This will permanently delete API key, PIN, settings, chats, statistics, and logs. This cannot be undone.',
+          ),
+          const SizedBox(height: 12),
+          const Text('Type RESET to confirm'),
+          const SizedBox(height: 8),
+          TextField(
+            controller: widget.controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.characters,
+            onChanged: _handleChanged,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'RESET',
+            ),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _canConfirm
+              ? () => Navigator.of(context).pop(true)
+              : null,
+          child: const Text('Reset all data'),
         ),
       ],
     );
