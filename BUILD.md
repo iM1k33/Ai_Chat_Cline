@@ -16,6 +16,7 @@ Recommended workflow:
 
 ```bash
 flutter clean
+flutter create .
 flutter pub get
 flutter analyze
 flutter test

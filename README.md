@@ -125,6 +125,7 @@ Exports on iOS use the native Share Sheet.
 ## Quick Start
 
 ```bash
+flutter create .
 flutter pub get
 flutter run -d macos
 ```
