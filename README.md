@@ -9,8 +9,6 @@ The app is designed for macOS and iOS first, with support for OpenAI-compatible 
 - OpenRouter and VSEGPT support
 - First-launch API key setup
 - Automatic provider detection from API key prefix
-- Editable `BASE_URL`
-- API key validation
 - 4-digit PIN lock
 - API key reveal protected by PIN
 - Multiple saved conversations
@@ -195,12 +193,18 @@ Expected behavior:
 - `Enter` sends message
 - `Shift+Enter` inserts a new line
 
-## Release TODO
-
-- Final app icon
-- Final app display name
-- Bundle identifier cleanup
-- Full VSEGPT production testing
-- UI polish pass
-- Localization
-- Better release signing/notarization
+## AI Chat App — v2 roadmap
+- Add localization infrastructure
+- Start new conversation with context from other chat
+- In-bubble message edit
+- Search across conversations
+- Pin favorite conversations
+- Rename conversations
+- Bluk delete/export
+- Prompt preset library
+- Token estimate before send
+- Files and attachments
+- Improved statistics
+- Improved graphs
+- Improved security
+- Pretty UI
