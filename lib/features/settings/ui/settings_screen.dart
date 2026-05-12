@@ -1,5 +1,6 @@
 import 'package:aichatcline/features/providers/models/ai_model.dart';
 import 'package:aichatcline/features/providers/models/model_parameters.dart';
+import 'package:aichatcline/features/providers/services/provider_detector.dart';
 import 'package:aichatcline/features/providers/state/model_catalog_controller.dart';
 import 'package:aichatcline/features/settings/state/app_settings.dart';
 import 'package:aichatcline/features/settings/state/settings_controller.dart';
@@ -39,6 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final FocusNode _apiKeyFocusNode = FocusNode();
   bool _revealBusy = false;
   bool _showApiKey = false;
+  bool _isAutoUpdatingBaseUrlFromApiKey = false;
 
   @override
   void initState() {
@@ -46,6 +48,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final SettingsController controller = widget.controller;
 
     _apiKeyController = TextEditingController(text: controller.apiKey);
+    _apiKeyController.addListener(_syncBaseUrlFromApiKeyInputIfNeeded);
     _baseUrlController = TextEditingController(
       text: controller.settings.baseUrl ?? '',
     );
@@ -94,6 +97,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _modelSearchController.dispose();
     _apiKeyFocusNode.dispose();
     super.dispose();
+  }
+
+  void _syncBaseUrlFromApiKeyInputIfNeeded() {
+    if (_isAutoUpdatingBaseUrlFromApiKey) {
+      return;
+    }
+
+    final String candidate = _apiKeyController.text.trim();
+    if (candidate.isEmpty) {
+      return;
+    }
+
+    final detected = ProviderDetector.tryDetectByApiKey(candidate);
+    if (detected == null) {
+      return;
+    }
+
+    if (_baseUrlController.text.trim() == detected.baseUrl) {
+      return;
+    }
+
+    _isAutoUpdatingBaseUrlFromApiKey = true;
+    _baseUrlController.text = detected.baseUrl;
+    _isAutoUpdatingBaseUrlFromApiKey = false;
   }
 
   void _syncControllersFromState() {

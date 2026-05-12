@@ -434,16 +434,15 @@ class SettingsController extends ChangeNotifier {
   Future<void> resetSettings() async {
     error = null;
     try {
-      await _settingsStorage.resetSettings();
-      settings = AppSettings.defaults();
-      await _secureStorage.deleteApiKey();
-      await _secureStorage.deletePin();
-      apiKey = '';
-      detectedProvider = null;
-      isValidatingApiKey = false;
-      isUnlocked = false;
-      isPinSetupRequired = false;
-      remainingPinAttempts = _maxPinAttempts;
+      final AppSettings defaults = AppSettings.defaults();
+      settings = settings.copyWith(
+        systemPrompt: defaults.systemPrompt,
+        themeMode: defaults.themeMode,
+        locale: defaults.locale,
+        includeMessageContentInLogs: defaults.includeMessageContentInLogs,
+        modelParameters: defaults.modelParameters,
+      );
+      await _settingsStorage.saveSettings(settings);
     } catch (e) {
       error = 'Failed to reset settings';
       await _appLogger?.logWarning(

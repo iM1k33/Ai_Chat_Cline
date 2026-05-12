@@ -63,14 +63,13 @@ class _ChatScreenState extends State<ChatScreen> {
     return FilledButton.tonal(
       onPressed: widget.onShowBalance,
       style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        visualDensity: VisualDensity.compact,
-        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        minimumSize: const Size(0, 40),
       ),
       child: loading
           ? const SizedBox(
-              width: 14,
-              height: 14,
+              width: 16,
+              height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -720,6 +719,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     widget.controller.currentConversation?.title ?? 'AI Chat',
                   ),
                   actions: [
+                    if (_isDesktop) _balanceBadge(),
                     FilledButton.tonalIcon(
                       icon: const Icon(Icons.refresh, size: 18),
                       label: const Text('Regenerate'),
@@ -729,7 +729,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ? null
                           : widget.controller.regenerateLastAssistantResponse,
                     ),
-                    _balanceBadge(),
+                    if (!_isDesktop) _balanceBadge(),
                     const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Export conversation',
