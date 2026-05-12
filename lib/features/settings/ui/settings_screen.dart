@@ -320,8 +320,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final bool? confirmed = await showDialog<bool>(
         context: context,
         builder: (BuildContext dialogContext) {
-          return _ResetAppDataConfirmationDialog(
-            controller: textController,
+          bool canConfirm = false;
+
+          return StatefulBuilder(
+            builder:
+                (
+                  BuildContext dialogContext,
+                  void Function(void Function()) setDialogState,
+                ) {
+                  return AlertDialog(
+                    key: const Key('confirm_reset_app_data_dialog'),
+                    title: const Text('Reset app data?'),
+                    content: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            'This will permanently delete API key, PIN, settings, chats, statistics, and logs. This cannot be undone.',
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('Type RESET to confirm'),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: textController,
+                            autofocus: true,
+                            textCapitalization: TextCapitalization.characters,
+                            onChanged: (String value) {
+                              setDialogState(() {
+                                canConfirm =
+                                    value.trim().toUpperCase() == 'RESET';
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              hintText: 'RESET',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: canConfirm
+                            ? () => Navigator.of(dialogContext).pop(true)
+                            : null,
+                        child: const Text('Reset all data'),
+                      ),
+                    ],
+                  );
+                },
           );
         },
       );
@@ -331,6 +383,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       textController.dispose();
     }
   }
+
   Future<void> _resetAppDataWithPinFlow() async {
     if (_revealBusy || widget.onResetAppData == null) {
       return;
@@ -399,6 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ).showSnackBar(const SnackBar(content: Text('Failed to reset app data')));
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final SettingsController controller = widget.controller;
@@ -930,9 +984,7 @@ class _PinRevealDialogState extends State<_PinRevealDialog> {
 }
 
 class _ResetAppDataConfirmationDialog extends StatefulWidget {
-  const _ResetAppDataConfirmationDialog({
-    required this.controller,
-  });
+  const _ResetAppDataConfirmationDialog({required this.controller});
 
   final TextEditingController controller;
 
@@ -984,9 +1036,7 @@ class _ResetAppDataConfirmationDialogState
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _canConfirm
-              ? () => Navigator.of(context).pop(true)
-              : null,
+          onPressed: _canConfirm ? () => Navigator.of(context).pop(true) : null,
           child: const Text('Reset all data'),
         ),
       ],
